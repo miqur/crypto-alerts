@@ -183,7 +183,7 @@ async function buildBtcMessage(): Promise<string> {
 async function buildHealthzMessage(): Promise<string> {
 	const baseUrl = resolveServiceBaseUrl();
 	const healthUrl = `${baseUrl}/healthz`;
-	const checkedAt = new Date().toLocaleString('ru-RU');
+	const checkedAt = formatMinskTime();
 
 	try {
 		const response = await fetch(healthUrl, {
@@ -234,6 +234,12 @@ function resolveServiceBaseUrl(): string {
 	return candidate.replace(/\/+$/, '');
 }
 
+function formatMinskTime(): string {
+	return new Date().toLocaleString('ru-RU', {
+		timeZone: 'Europe/Minsk'
+	});
+}
+
 async function buildCurrencyMessage(): Promise<string> {
 	try {
 		const rates = await getUsdBynRates();
@@ -252,7 +258,7 @@ async function buildCurrencyMessage(): Promise<string> {
 			}
 		}
 
-		lines.push('', `Проверка: ${new Date().toLocaleString('ru-RU')}`);
+		lines.push('', `Проверка: ${formatMinskTime()}`);
 		return lines.join('\n');
 	} catch (error) {
 		console.error('Failed to build /currency response:', error);
