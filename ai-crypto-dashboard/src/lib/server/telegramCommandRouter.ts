@@ -111,24 +111,9 @@ async function buildAlertsMessage(): Promise<string> {
 		const top3 = alerts.slice(0, 3);
 		const lines: string[] = ['🚨 Топ сигналы', ''];
 		for (const alert of top3) {
-			const strengthIcon =
-				alert.signalStrength === 'strong' ? '🔥' : alert.signalStrength === 'medium' ? '⚠️' : 'ℹ️';
-			lines.push(
-				`${strengthIcon} ${alert.coinName} — ${formatSignedPercent(alert.priceChange24h)}`
-			);
-			lines.push(toShortReason(alert));
-			lines.push(`Действие: ${alert.actionHint}`);
-			if (alert.shortTermChange5mPercent !== null || alert.shortTermChange15mPercent !== null) {
-				const short5m =
-					alert.shortTermChange5mPercent === null
-						? 'н/д'
-						: `${alert.shortTermChange5mPercent >= 0 ? '+' : ''}${alert.shortTermChange5mPercent.toFixed(1)}%`;
-				const short15m =
-					alert.shortTermChange15mPercent === null
-						? 'н/д'
-						: `${alert.shortTermChange15mPercent >= 0 ? '+' : ''}${alert.shortTermChange15mPercent.toFixed(1)}%`;
-				lines.push(`Краткосрок: 5м ${short5m}, 15м ${short15m}`);
-			}
+			const marker = getPriorityIcon(alert);
+			lines.push(`${marker} ${alert.coinName} — ${formatSignedPercent(alert.priceChange24h)}`);
+			lines.push(`${alert.actionHint} | Confidence: ${alert.confidencePercent}%`);
 			lines.push('');
 		}
 		lines.push('Подсказка: следите за продолжением импульса и подтверждением по объему.');
@@ -278,30 +263,17 @@ async function buildCurrencyMessage(): Promise<string> {
 	}
 }
 
-function toShortReason(alert: {
-	signal: 'bullish' | 'bearish' | 'uncertain';
+function getPriorityIcon(alert: {
+	extremeMove: boolean;
 	decision: 'early_breakout' | 'breakout' | 'pullback' | 'continuation' | 'uncertain';
-	reason: string;
+	signalStrength: 'strong' | 'medium' | 'weak';
 }): string {
-	const decisionLabel = formatDecisionLabel(alert.decision);
-	return `${decisionLabel}. ${alert.reason}`;
-}
-
-function formatDecisionLabel(
-	decision: 'early_breakout' | 'breakout' | 'pullback' | 'continuation' | 'uncertain'
-): string {
-	switch (decision) {
-		case 'early_breakout':
-			return '⚡ Классификация: early_breakout';
-		case 'breakout':
-			return '🔥 Классификация: breakout';
-		case 'pullback':
-			return 'Классификация: pullback';
-		case 'continuation':
-			return 'Классификация: continuation';
-		default:
-			return 'Классификация: uncertain';
-	}
+	if (alert.extremeMove) return '🚀';
+	if (alert.decision === 'early_breakout') return '⚡';
+	if (alert.decision === 'breakout') return '🔥';
+	if (alert.signalStrength === 'strong') return '🔥';
+	if (alert.signalStrength === 'medium') return '⚠️';
+	return 'ℹ️';
 }
 
 function getBtcShortTermChange(currentPrice: number): { change5m: number; change15m: number } {

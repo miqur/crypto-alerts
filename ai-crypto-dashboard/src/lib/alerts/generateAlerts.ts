@@ -17,6 +17,8 @@ export interface Alert {
 	momentumScore: number;
 	decision: 'early_breakout' | 'breakout' | 'pullback' | 'continuation' | 'uncertain';
 	actionHint: string;
+	extremeMove: boolean;
+	confidencePercent: number;
 	shortTermChange5mPercent: number | null;
 	shortTermChange15mPercent: number | null;
 }
@@ -50,8 +52,10 @@ export async function generateAlerts(
 				sentimentLabel
 			});
 			const confidence = confidenceFromMomentum(change, momentum.momentumScore);
-			const signalStrength = momentum.momentumStrength;
+			const confidencePercent = computeConfidencePercent(change, momentum.momentumScore, momentum.volumeSpike);
+			const signalStrength = signalStrengthFromConfidenceScore(confidence, momentum.momentumScore);
 			const reason = buildReason(signal, confidence, momentum.volumeSpike);
+			const extremeMove = Math.abs(change) > 20;
 			const decision = classifyDecision({
 				signal,
 				change24h: change,
@@ -62,23 +66,21 @@ export async function generateAlerts(
 				volumeSpike: momentum.volumeSpike,
 				momentumStrength: signalStrength
 			});
-			const actionHint = getActionHint(decision);
+			const actionHint = getActionHint(decision, extremeMove);
 
 			const alert: Alert = {
 				coinName: coin.name,
 				message: buildAlertMessage({
 					coinName: coin.name,
 					change,
-					shortTermChangePercent: momentum.shortTermChangePercent,
-					signal,
-					reason,
-					confidence,
-					volumeSpike: momentum.volumeSpike,
-					actionHint
+					strength: signalStrength,
+					actionHint,
+					confidencePercent,
+					extremeMove
 				}),
 				type: signal === 'bullish' ? 'bullish' : signal === 'bearish' ? 'bearish' : 'warning',
 				severity: confidence,
-				icon: signal === 'bullish' ? '📈' : signal === 'bearish' ? '📉' : '⚠️',
+				icon: extremeMove ? '🚀' : signalStrengthIcon(signalStrength),
 				priceChange24h: change,
 				confidence,
 				signal,
@@ -91,24 +93,28 @@ export async function generateAlerts(
 				volumeRatio: momentum.volumeRatio,
 				momentumScore: momentum.momentumScore,
 				decision,
-				actionHint
+				actionHint,
+				extremeMove,
+				confidencePercent
 			};
 
 			return alert;
 		})
 		.filter((alert): alert is Alert => alert !== null);
 
-	// Priority: early_breakout > breakout > continuation > pullback > uncertain,
-	// then severity and strongest move.
+	// Priority: extreme_move > early_breakout > breakout > continuation > others.
 	const decisionPriority: Record<Alert['decision'], number> = {
-		early_breakout: 0,
-		breakout: 1,
-		continuation: 2,
-		pullback: 3,
-		uncertain: 4
+		early_breakout: 1,
+		breakout: 2,
+		continuation: 3,
+		pullback: 4,
+		uncertain: 5
 	};
 	const severityOrder = { high: 0, medium: 1, low: 2 };
 	alerts.sort((a, b) => {
+		if (a.extremeMove !== b.extremeMove) {
+			return a.extremeMove ? -1 : 1;
+		}
 		const decisionDiff = decisionPriority[a.decision] - decisionPriority[b.decision];
 		if (decisionDiff !== 0) {
 			return decisionDiff;
@@ -156,63 +162,49 @@ function confidenceFromMomentum(change: number, momentumScore: number): 'low' | 
 
 function getBullishReason(confidence: 'low' | 'medium' | 'high'): string {
 	if (confidence === 'high') {
-		return 'Импульс усиливается, возможен выход из диапазона.';
+		return 'Possible breakout';
 	}
 
 	if (confidence === 'medium') {
-		return 'Рост поддерживается фоном и сохраняет силу.';
+		return 'Momentum building';
 	}
 
-	return 'Бычий уклон есть, но подтверждение пока ограничено.';
+	return 'Low strength move';
 }
 
 function getBearishReason(confidence: 'low' | 'medium' | 'high'): string {
 	if (confidence === 'high') {
-		return 'Давление продавцов сильное, откат может продолжиться.';
+		return 'Momentum building';
 	}
 
 	if (confidence === 'medium') {
-		return 'Продавцы активны, нисходящий импульс нарастает.';
+		return 'Possible breakout';
 	}
 
-	return 'Медвежий уклон есть, но отскок пока не исключен.';
+	return 'Low strength move';
 }
 
 function buildAlertMessage({
 	coinName,
 	change,
-	shortTermChangePercent,
-	signal,
-	reason,
-	confidence,
-	volumeSpike,
-	actionHint
+	strength,
+	actionHint,
+	confidencePercent,
+	extremeMove
 }: {
 	coinName: string;
 	change: number;
-	shortTermChangePercent: number | null;
-	signal: 'bullish' | 'bearish' | 'uncertain';
-	reason: string;
-	confidence: 'low' | 'medium' | 'high';
-	volumeSpike: boolean;
+	strength: Alert['signalStrength'];
 	actionHint: string;
+	confidencePercent: number;
+	extremeMove: boolean;
 }): string {
-	const icon = signal === 'bullish' ? '📈' : signal === 'bearish' ? '📉' : '⚠️';
 	const signedChange = `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
-	const shortTermMove =
-		shortTermChangePercent === null
-			? null
-			: `${shortTermChangePercent >= 0 ? '+' : ''}${shortTermChangePercent.toFixed(1)}% (5-15m)`;
-	const directionLabel =
-		signal === 'bullish' ? 'Бычий' : signal === 'bearish' ? 'Медвежий' : 'Неопределенный';
-	const volumeText = volumeSpike ? 'Объем подтверждает движение' : 'Объем без всплеска';
+	const icon = extremeMove ? '🚀' : signalStrengthIcon(strength);
 
-	return `${icon} ${coinName} — ${shortTermMove ?? signedChange} (${directionLabel})
-24h: ${signedChange}
-${volumeText}
-${reason}
-Действие: ${actionHint}
-Уверенность: ${capitalizeRu(confidence)}`;
+	// Max 2 lines for cleaner presentation.
+	return `${icon} ${coinName} — ${signedChange} | Confidence: ${confidencePercent}%
+${actionHint}`;
 }
 
 function buildReason(
@@ -221,19 +213,13 @@ function buildReason(
 	volumeSpike: boolean
 ): string {
 	if (signal === 'uncertain') {
-		return 'Сигнал смешанный: цена и фон не дают устойчивого направления.';
+		return 'Mixed signals';
 	}
 	const base = signal === 'bullish' ? getBullishReason(confidence) : getBearishReason(confidence);
 	if (!volumeSpike) {
 		return base;
 	}
-	return `${base} Движение поддержано ростом объема.`;
-}
-
-function capitalizeRu(value: Alert['confidence']): string {
-	if (value === 'high') return 'Высокая';
-	if (value === 'medium') return 'Средняя';
-	return 'Низкая';
+	return 'Momentum building';
 }
 
 function classifyDecision(input: {
@@ -286,19 +272,50 @@ function classifyDecision(input: {
 	return 'uncertain';
 }
 
-function getActionHint(decision: Alert['decision']): string {
+function getActionHint(decision: Alert['decision'], extremeMove: boolean): string {
+	if (extremeMove) {
+		return 'Extreme move';
+	}
+
 	switch (decision) {
 		case 'early_breakout':
-			return 'Ранний пробой формируется, наблюдать очень внимательно';
+			return 'Watch closely, momentum building';
 		case 'breakout':
-			return 'Следить за пробоем';
+			return 'Possible breakout';
 		case 'pullback':
-			return 'Возможен разворот';
+			return 'Low strength move';
 		case 'continuation':
-			return 'Вероятно продолжение импульса';
+			return 'Momentum building';
 		default:
-			return 'Высокий риск, направление неясно';
+			return 'Mixed signals';
 	}
+}
+
+function signalStrengthFromConfidenceScore(
+	confidence: Alert['confidence'],
+	momentumScore: number
+): Alert['signalStrength'] {
+	if (confidence === 'high' || momentumScore >= 4) {
+		return 'strong';
+	}
+	if (confidence === 'medium' || momentumScore >= 2) {
+		return 'medium';
+	}
+	return 'weak';
+}
+
+function signalStrengthIcon(strength: Alert['signalStrength']): string {
+	if (strength === 'strong') return '🔥';
+	if (strength === 'medium') return '⚠️';
+	return 'ℹ️';
+}
+
+function computeConfidencePercent(change: number, momentumScore: number, volumeSpike: boolean): number {
+	const changeScore = Math.min(35, Math.round(Math.abs(change) * 1.8));
+	const momentum = Math.min(45, momentumScore * 12);
+	const volume = volumeSpike ? 20 : 0;
+	const score = Math.min(98, Math.max(25, changeScore + momentum + volume));
+	return score;
 }
 
 // Optional: AI can only generate a short reason sentence
@@ -306,11 +323,9 @@ export async function enhanceAlertWithAI(alert: Alert): Promise<string> {
 	return buildAlertMessage({
 		coinName: alert.coinName,
 		change: alert.priceChange24h,
-		shortTermChangePercent: alert.shortTermChangePercent,
-		signal: alert.signal,
-		reason: alert.reason,
-		confidence: alert.confidence,
-		volumeSpike: alert.volumeSpike,
-		actionHint: alert.actionHint
+		strength: alert.signalStrength,
+		actionHint: alert.actionHint,
+		confidencePercent: alert.confidencePercent,
+		extremeMove: alert.extremeMove
 	});
 }

@@ -70,18 +70,12 @@ async function formatAlertsForTelegram(alerts: Alert[]): Promise<string> {
 	let message = '🚨 СМАРТ-СИГНАЛЫ\n────────────────';
 
 	alerts.forEach((alert) => {
-		const typeEmoji = alert.signal === 'bullish' ? '📈' : '📉';
-		const directionLabel = alert.signal === 'bullish' ? 'Бычий' : 'Медвежий';
+		const typeEmoji = getPriorityIcon(alert);
 		const signedChange = `${alert.priceChange24h >= 0 ? '+' : ''}${alert.priceChange24h.toFixed(1)}%`;
-		const confidence = formatConfidenceRu(alert.confidence);
-		const strength = formatSignalStrength(alert.signalStrength);
-		const decision = formatDecision(alert.decision);
 
-		message += `\n\n${typeEmoji} ${alert.coinName}  ${signedChange}  •  ${directionLabel}`;
-		message += `\n${alert.reason}`;
-		message += `\nКлассификация: ${decision}`;
-		message += `\nДействие: ${alert.actionHint}`;
-		message += `\n└ Уверенность: ${confidence} ${strength}`;
+		// Max 2 lines per alert block.
+		message += `\n\n${typeEmoji} ${alert.coinName} — ${signedChange}`;
+		message += `\n${alert.actionHint} | Confidence: ${alert.confidencePercent}%`;
 	});
 
 	const marketContext = await generateMarketContext(alerts);
@@ -112,43 +106,13 @@ async function generateMarketContext(alerts: Alert[]): Promise<string> {
 	return 'Смешанная картина, направление пока неочевидно.';
 }
 
-function formatSignalStrength(strength: Alert['signalStrength']): string {
-	if (strength === 'strong') {
-		return '🔥 Сильный';
-	}
-
-	if (strength === 'medium') {
-		return '⚠️ Средний';
-	}
-
-	return 'ℹ️ Слабый';
-}
-
-function formatConfidenceRu(confidence: Alert['confidence']): string {
-	if (confidence === 'high') {
-		return 'Высокая';
-	}
-
-	if (confidence === 'medium') {
-		return 'Средняя';
-	}
-
-	return 'Низкая';
-}
-
-function formatDecision(decision: Alert['decision']): string {
-	switch (decision) {
-		case 'early_breakout':
-			return '⚡ early_breakout';
-		case 'breakout':
-			return '🔥 breakout';
-		case 'pullback':
-			return 'pullback';
-		case 'continuation':
-			return 'continuation';
-		default:
-			return 'uncertain';
-	}
+function getPriorityIcon(alert: Alert): string {
+	if (alert.extremeMove) return '🚀';
+	if (alert.decision === 'early_breakout') return '⚡';
+	if (alert.decision === 'breakout') return '🔥';
+	if (alert.signalStrength === 'strong') return '🔥';
+	if (alert.signalStrength === 'medium') return '⚠️';
+	return 'ℹ️';
 }
 
 function formatModelTier(model: string): string {
