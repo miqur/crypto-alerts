@@ -76,12 +76,24 @@ export async function getMarketCoins(): Promise<CoinData[]> {
 		inFlight = null;
 	});
 	const data = await inFlight;
+
+	// Never overwrite a previously valid cache with all-zero fallback payload.
+	if (isAllZeroMarketData(data) && cache?.data?.length && hasMeaningfulMarketData(cache.data)) {
+		console.warn('Received all-zero market payload; keeping last valid cached data.');
+		return cache.data;
+	}
+
 	setMarketCache(data);
 	return data;
 }
 
 export function invalidateMarketCache(reason: string): void {
-	cache = null;
+	if (!cache) {
+		console.log(`Cache invalidated early: ${reason} (no cache to preserve)`);
+		return;
+	}
+	// Keep last good data as stale fallback, but force next call to refresh.
+	cache.timestamp = 0;
 	console.log(`Cache invalidated early: ${reason}`);
 }
 
@@ -166,6 +178,11 @@ async function fetchCoinsFromCoinGeckoWithRetry(): Promise<CoinData[]> {
 				console.warn('CoinGecko failed; using stale cached market data.', err);
 				return cache.data;
 			}
+			const simplePriceFallback = await fetchSimplePriceFallback();
+			if (simplePriceFallback.length > 0) {
+				console.warn('Simple price fallback used for market data.');
+				return simplePriceFallback;
+			}
 			console.warn('CoinGecko failed; trying emergency market source.', err);
 			const emergencyData = await fetchEmergencyCoins();
 			if (emergencyData.length > 0) {
@@ -204,6 +221,12 @@ async function refreshPriorityCoins(): Promise<void> {
 }
 
 function setMarketCache(data: CoinData[]): void {
+	// Guard against replacing existing good cache with degraded all-zero data.
+	if (isAllZeroMarketData(data) && cache?.data?.length && hasMeaningfulMarketData(cache.data)) {
+		console.warn('Skip cache update: incoming market data is all-zero fallback.');
+		return;
+	}
+
 	const volatility = estimateMarketVolatility(data);
 	const ttlMs = resolveAdaptiveTtlMs(volatility);
 	const priorityTtlMs = resolvePriorityTtlMs(volatility);
@@ -313,6 +336,51 @@ async function fetchEmergencyCoins(): Promise<CoinData[]> {
 	}
 }
 
+async function fetchSimplePriceFallback(): Promise<CoinData[]> {
+	try {
+		const response = await fetch(
+			'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,the-open-network&vs_currencies=usd&include_24hr_change=true'
+		);
+		if (!response.ok) {
+			return [];
+		}
+
+		const payload = (await response.json()) as Record<
+			string,
+			{ usd?: number; usd_24h_change?: number } | undefined
+		>;
+		const rows: Array<{ id: string; name: string }> = [
+			{ id: 'bitcoin', name: 'Bitcoin' },
+			{ id: 'ethereum', name: 'Ethereum' },
+			{ id: 'the-open-network', name: 'TON' }
+		];
+
+		const mapped = rows
+			.map((row) => {
+				const source = payload[row.id];
+				const price = Number(source?.usd ?? 0);
+				const change = Number(source?.usd_24h_change ?? 0);
+				if (!Number.isFinite(price) || price <= 0) {
+					return null;
+				}
+				return {
+					id: row.id,
+					name: row.name,
+					current_price: price,
+					total_volume: 0,
+					price_change_percentage_24h: Number.isFinite(change) ? change : 0,
+					image: coinImageById(row.id)
+				} satisfies CoinData;
+			})
+			.filter((coin): coin is CoinData => coin !== null);
+
+		return mapped;
+	} catch (error) {
+		console.warn('Simple price fallback failed.', error);
+		return [];
+	}
+}
+
 function ensureTonInEmergencySet(coins: CoinData[]): CoinData[] {
 	const hasTon = coins.some((coin) => coin.id === 'the-open-network');
 	if (hasTon) {
@@ -360,4 +428,23 @@ function coinImageById(id: string): string {
 
 function wait(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isAllZeroMarketData(coins: CoinData[]): boolean {
+	if (coins.length === 0) return true;
+	return coins.every(
+		(coin) =>
+			(coin.current_price ?? 0) === 0 &&
+			(coin.price_change_percentage_24h ?? 0) === 0 &&
+			(coin.total_volume ?? 0) === 0
+	);
+}
+
+function hasMeaningfulMarketData(coins: CoinData[]): boolean {
+	return coins.some(
+		(coin) =>
+			(coin.current_price ?? 0) > 0 ||
+			(coin.total_volume ?? 0) > 0 ||
+			Math.abs(coin.price_change_percentage_24h ?? 0) > 0
+	);
 }
