@@ -1,0 +1,242 @@
+import { generateAlerts } from '$lib/alerts/generateAlerts';
+import { computeMomentumSignals } from '$lib/alerts/momentum';
+import { getTopCoins } from '$lib/api/coins';
+
+const knownUsers = new Set<number>();
+const btcPriceHistory: Array<{ price: number; timestamp: number }> = [];
+const BTC_HISTORY_WINDOW_MS = 20 * 60 * 1000;
+
+export async function handleTelegramCommand(
+	text: string,
+	chatId: number
+): Promise<{ command: string; reply: string }> {
+	knownUsers.add(chatId);
+	const command = text.split(/\s+/)[0].toLowerCase();
+
+	let reply: string;
+	switch (command) {
+		case '/start':
+			reply = buildStartMessage(chatId);
+			break;
+		case '/status':
+			reply = await buildStatusMessage();
+			break;
+		case '/alerts':
+			reply = await buildAlertsMessage();
+			break;
+		case '/btc':
+			reply = await buildBtcMessage();
+			break;
+		default:
+			reply = 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc';
+			break;
+	}
+
+	return { command, reply };
+}
+
+function buildStartMessage(chatId: number): string {
+	return [
+		'👋 Привет! Я crypto-dashboard бот.',
+		'',
+		'Доступные команды:',
+		'/status — краткий статус рынка',
+		'/alerts — топ-3 текущих сигнала',
+		'/btc — быстрый статус по BTC',
+		'',
+		`Ваш chat_id: ${chatId}`,
+		`Подключено пользователей: ${knownUsers.size}`
+	].join('\n');
+}
+
+async function buildStatusMessage(): Promise<string> {
+	try {
+		const coins = await getTopCoins();
+		const btc = coins.find((coin) => coin.id === 'bitcoin');
+		const eth = coins.find((coin) => coin.id === 'ethereum');
+		const avgChange = getAverageChange(coins);
+		const avgAbsChange = getAverageAbsChange(coins);
+		const trend = avgChange > 1 ? 'Бычий' : avgChange < -1 ? 'Медвежий' : 'Нейтральный';
+		const volatility = avgAbsChange >= 5 ? 'Высокая' : avgAbsChange >= 2 ? 'Средняя' : 'Низкая';
+		const hint =
+			volatility === 'Высокая'
+				? 'Рынок активный, следите за ускорением импульса.'
+				: volatility === 'Средняя'
+					? 'Движение умеренное, ждите подтверждения по объему.'
+					: 'Рынок спокойный, сильный импульс пока не сформирован.';
+
+		return [
+			'📊 Статус рынка',
+			`BTC: ${formatSignedPercent(btc?.price_change_percentage_24h ?? 0)}`,
+			`ETH: ${formatSignedPercent(eth?.price_change_percentage_24h ?? 0)}`,
+			'',
+			`Тренд: ${trend}`,
+			`Волатильность: ${volatility}`,
+			'',
+			`Подсказка: ${hint}`
+		].join('\n');
+	} catch (error) {
+		console.error('Failed to build /status response:', error);
+		return 'Не удалось получить статус рынка. Попробуйте еще раз позже.';
+	}
+}
+
+async function buildAlertsMessage(): Promise<string> {
+	try {
+		const coins = await getTopCoins();
+		const avgChange = getAverageChange(coins);
+		const sentimentLabel = avgChange >= 0 ? 'bullish' : 'bearish';
+		const alerts = await generateAlerts(coins, sentimentLabel);
+
+		if (alerts.length === 0) {
+			return [
+				'🚨 Топ сигналы',
+				'',
+				'Сильных сигналов пока нет.',
+				'Подсказка: рынок тихий, ждите пробой или рост объема.'
+			].join('\n');
+		}
+
+		const top3 = alerts.slice(0, 3);
+		const lines: string[] = ['🚨 Топ сигналы', ''];
+		for (const alert of top3) {
+			const strengthIcon =
+				alert.signalStrength === 'strong' ? '🔥' : alert.signalStrength === 'medium' ? '⚠️' : 'ℹ️';
+			lines.push(
+				`${strengthIcon} ${alert.coinName} — ${formatSignedPercent(alert.priceChange24h)}`
+			);
+			lines.push(toShortReason(alert));
+			lines.push('');
+		}
+		lines.push('Подсказка: следите за продолжением импульса и подтверждением по объему.');
+		return lines.join('\n');
+	} catch (error) {
+		console.error('Failed to build /alerts response:', error);
+		return 'Не удалось получить алерты. Попробуйте позже.';
+	}
+}
+
+async function buildBtcMessage(): Promise<string> {
+	try {
+		const coins = await getTopCoins();
+		const btc = coins.find((coin) => coin.id === 'bitcoin');
+		if (!btc) {
+			return 'BTC не найден в текущих рыночных данных.';
+		}
+
+		const avgChange = getAverageChange(coins);
+		const sentimentLabel = avgChange >= 0 ? 'bullish' : 'bearish';
+		const momentum = computeMomentumSignals({
+			coinKey: btc.id,
+			currentPrice: btc.current_price,
+			totalVolume: btc.total_volume,
+			priceChange24h: btc.price_change_percentage_24h,
+			sentimentLabel
+		});
+		const signal =
+			btc.price_change_percentage_24h > 4
+				? 'Бычий'
+				: btc.price_change_percentage_24h < -4
+					? 'Медвежий'
+					: 'Нейтральный';
+		const momentumLabel =
+			momentum.momentumStrength === 'strong'
+				? 'Сильный'
+				: momentum.momentumStrength === 'medium'
+					? 'Средний'
+					: 'Слабый';
+		const shortTerm = getBtcShortTermChange(btc.current_price);
+		const hint =
+			momentumLabel === 'Сильный'
+				? 'Подсказка: возможен пробой, следите за удержанием импульса.'
+				: momentumLabel === 'Средний'
+					? 'Подсказка: импульс есть, дождитесь подтверждения.'
+					: 'Подсказка: сильного импульса нет, не спешите с входом.';
+
+		return [
+			'₿ BTC',
+			`Цена: $${btc.current_price.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+			`24ч: ${formatSignedPercent(btc.price_change_percentage_24h)}`,
+			`5м: ${formatSignedPercent(shortTerm.change5m)} / 15м: ${formatSignedPercent(shortTerm.change15m)}`,
+			'',
+			`Сигнал: ${signal}`,
+			`Импульс: ${momentumLabel}`,
+			hint
+		].join('\n');
+	} catch (error) {
+		console.error('Failed to build /btc response:', error);
+		return 'Не удалось получить BTC данные. Попробуйте позже.';
+	}
+}
+
+function toShortReason(alert: {
+	signal: 'bullish' | 'bearish' | 'uncertain';
+	signalStrength: 'strong' | 'medium' | 'weak';
+	volumeSpike: boolean;
+}): string {
+	if (alert.signal === 'bullish') {
+		if (alert.signalStrength === 'strong') {
+			return alert.volumeSpike
+				? 'Сильный восходящий импульс, объем подтверждает движение.'
+				: 'Сильный восходящий импульс, возможен пробой.';
+		}
+		return 'Умеренный рост, нужен дополнительный импульс.';
+	}
+	if (alert.signal === 'bearish') {
+		if (alert.signalStrength === 'strong') {
+			return alert.volumeSpike
+				? 'Сильное давление продавцов, объем на стороне снижения.'
+				: 'Давление продавцов растет, риск продолжения отката.';
+		}
+		return 'Снижение умеренное, подтверждение пока слабое.';
+	}
+	return 'Сигнал неопределенный, направление не подтверждено.';
+}
+
+function getBtcShortTermChange(currentPrice: number): { change5m: number; change15m: number } {
+	const now = Date.now();
+	btcPriceHistory.push({ price: currentPrice, timestamp: now });
+	cleanupBtcHistory(now);
+
+	const snapshot5m = findSnapshotBefore(now - 5 * 60 * 1000);
+	const snapshot15m = findSnapshotBefore(now - 15 * 60 * 1000);
+
+	const change5m = snapshot5m ? ((currentPrice - snapshot5m.price) / snapshot5m.price) * 100 : 0;
+	const change15m = snapshot15m
+		? ((currentPrice - snapshot15m.price) / snapshot15m.price) * 100
+		: 0;
+
+	return { change5m, change15m };
+}
+
+function cleanupBtcHistory(now: number): void {
+	while (btcPriceHistory.length > 0 && now - btcPriceHistory[0].timestamp > BTC_HISTORY_WINDOW_MS) {
+		btcPriceHistory.shift();
+	}
+}
+
+function findSnapshotBefore(targetTs: number): { price: number; timestamp: number } | null {
+	for (let i = btcPriceHistory.length - 1; i >= 0; i -= 1) {
+		if (btcPriceHistory[i].timestamp <= targetTs) {
+			return btcPriceHistory[i];
+		}
+	}
+	return null;
+}
+
+function getAverageChange(coins: Array<{ price_change_percentage_24h: number }>): number {
+	return coins.length === 0
+		? 0
+		: coins.reduce((sum, coin) => sum + (coin.price_change_percentage_24h ?? 0), 0) / coins.length;
+}
+
+function getAverageAbsChange(coins: Array<{ price_change_percentage_24h: number }>): number {
+	return coins.length === 0
+		? 0
+		: coins.reduce((sum, coin) => sum + Math.abs(coin.price_change_percentage_24h ?? 0), 0) /
+				coins.length;
+}
+
+function formatSignedPercent(value: number): string {
+	return `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+}

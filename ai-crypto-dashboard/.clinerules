@@ -1,0 +1,557 @@
+---
+description: Core conventions for the RPV2 SvelteKit frontend project
+alwaysApply: true
+---
+
+# RPV2 FE — базовые правила
+
+## 🧠 Before writing code (MANDATORY)
+
+- ALWAYS:
+  1. Find 1-2 similar implementations in the repo
+  2. Explicitly state:
+     - which file(s) are used as reference
+     - which pattern is reused
+  3. List reused:
+     - utils
+     - components
+     - stores
+     - API functions
+  4. Describe approach briefly (1-3 sentences)
+  5. Only then write code
+
+- NEVER:
+  - invent new patterns if similar exists
+  - introduce new libraries
+  - guess API shapes or data structures
+
+---
+
+## 🔍 Reliability & anti-hallucination
+
+- If something is not found in the repo:
+  - explicitly say "not found"
+  - do NOT invent implementation
+- Do not assume API response structure without reference
+- Prefer asking 1–2 clarifying questions over guessing
+
+---
+
+## ♻️ When modifying existing code
+
+- Do NOT rewrite entire file
+- Apply minimal diff only
+- Preserve:
+  - structure
+  - naming
+  - formatting
+- Clearly explain:
+  - what changed
+  - why
+
+---
+
+## ⚡ Svelte-specific rules (CRITICAL)
+
+- Prefer reactive statements `$:` over manual subscriptions
+- Avoid unnecessary stores if local state is enough
+- Use `bind:value` instead of manual event handling where possible
+- Avoid React-like patterns:
+  - no “useEffect thinking”
+  - no over-abstraction
+- Keep logic simple and colocated unless reused
+
+---
+
+## 🏗️ Architecture rules
+
+- Before creating new:
+  - store
+  - util
+  - helper
+  → check `$lib/**` for existing ones
+
+- Follow domain structure:
+  - users → users utils/components
+  - activities → activities utils/components
+
+- Avoid:
+  - global stores unless truly needed
+  - duplicated logic across pages
+
+---
+
+## 🧩 Reference-first development
+
+- Every new feature MUST:
+  - be based on an existing page/component
+  - mention reference explicitly
+
+- Always explain:
+  - what is reused
+  - what is different
+
+---
+
+## 🌐 Язык в коде
+
+- Комментарии — **всегда на английском**
+- Переменные / функции / типы — **на английском**
+- Объяснения в чате — по умолчанию на русском
+
+---
+
+## 🧱 Технологический стек
+
+- SvelteKit 2 + Vite + TypeScript
+- Tailwind + Flowbite + internal UI components
+- НЕ менять:
+  - версии пакетов
+  - scripts в package.json
+  (если не просят явно)
+
+---
+
+## 🎯 Код-стайл
+
+- Следовать ESLint / Prettier проекта
+- Повторять:
+  - импорты
+  - форматирование
+  - naming conventions
+
+- В новых файлах:
+  - `<script lang="ts">` обязателен
+  - использовать типизацию
+
+---
+
+## 🔌 Работа с API
+
+- ALWAYS reuse:
+  - `$lib/utils/api`
+  - `$lib/utils/activity-api`
+
+- Pattern:
+  - check `response.statusCode`
+  - use `response.data`
+  - no silent errors
+
+---
+
+## 🧪 Формы и валидация
+
+- Use:
+  - `svelte-forms-lib`
+  - `yup`
+
+- Validation:
+  - schema рядом с формой
+  - reuse existing validators (e.g. `checkIfEmailReg`)
+
+- Errors:
+  - from i18n
+  - no hardcoded strings
+
+---
+
+## 🌍 i18n
+
+- ALWAYS use `$t` / `t`
+- NEVER hardcode UI text
+- Do not modify existing keys unless necessary
+
+---
+
+## 📊 UI и таблицы
+
+- Use:
+  - `DataHandler`
+  - `Datatable`
+  - `Th`, `Search`, `RowsPerPage`
+
+- Follow users-page pattern strictly
+
+- Prefer:
+  - `$lib/components/ui`
+  - existing UI components
+
+---
+
+## 🧭 Навигация и сторы
+
+- Navigation → `goto` from `$app/navigation`
+
+- State:
+  - use `writable` stores
+  - follow naming patterns
+
+---
+
+## 🔐 RBAC/UI/Redirect communication
+
+When working with RBAC:
+
+- Founder override (mandatory):
+  - if `dataRole === founder`, user can see/do everything
+  - in this case do NOT gate behavior by `rights`
+  - `rights` checks are for non-founder roles only
+
+User MUST provide:
+
+- Page/Route
+- UI changes
+- Redirect rule
+- Bypass roles
+- Modal details
+
+If missing:
+→ ask 1–3 clarifying questions
+→ DO NOT guess
+
+---
+description: Conventions for Svelte pages, forms and datatables in the RPV2 admin UI
+globs: src/**/*.svelte
+alwaysApply: false
+---
+
+# RPV2 — Svelte-страницы и формы
+
+## 📄 Структура
+
+- Order:
+  1. `<script lang="ts">`
+  2. markup
+  3. `<style>`
+
+- Always type:
+  - `export let data`
+  - props using existing types
+
+---
+
+## 📊 Таблицы
+
+- Follow users pattern strictly
+
+- Setup:
+  - `new DataHandler(...)`
+  - `handler.onChange(...)`
+  - call paginate API
+  - `handler.invalidate()` after mutations
+
+---
+
+## 🧪 Формы
+
+- Use:
+  - `createForm`
+  - `yup validationSchema`
+
+- Pattern:
+  - `initialValues`
+  - `validationSchema`
+  - `onSubmit`
+
+- Submit:
+  - `on:submit|preventDefault={handleSubmit}`
+
+---
+
+## 🔁 Переиспользование
+
+- Reuse:
+  - components
+  - utils
+  - dropdowns
+  - selectors
+
+- Do NOT:
+  - create new components if similar exists
+
+---
+
+## 🎯 Стили
+
+- Tailwind first
+- Follow admin green theme
+- Keep `<style>` minimal
+
+---
+
+## ⚡ Svelte best practices
+
+- Prefer `$:` instead of derived stores when local
+- Avoid over-splitting components
+- Keep logic close to usage
+
+---
+name: rpv2-frontend-workflow
+description: Guides the agent when working on the RPV2 SvelteKit admin frontend, especially Svelte pages with datatables, forms, i18n and API helpers. Enforces reference-first, minimal-diff and idiomatic Svelte patterns.
+---
+
+# RPV2 Frontend Workflow
+
+## 🧠 Execution flow (MANDATORY)
+
+When performing ANY task:
+
+1. **Understand the task**
+   - Identify:
+     - route/page
+     - feature type (table / form / edit / modal / RBAC)
+     - affected domain (users, activities, etc.)
+
+2. **Find references**
+   - Locate 1–2 closest examples in repo
+   - MUST explicitly state:
+     - file paths
+     - what is reused
+
+3. **Plan before coding**
+   - List:
+     - reused components
+     - reused utils
+     - reused API functions
+     - reused stores
+   - Describe approach (1–3 sentences)
+
+4. **Only then implement**
+
+If reference not found:
+→ say "not found"
+→ ask clarifying question if needed
+
+---
+
+## 🎯 Scope (when to use)
+
+Use this skill when:
+
+- Editing or adding pages in `src/routes/core/admin/**`
+- Implementing tables with pagination
+- Creating or modifying forms with validation
+- Working with API helpers in `$lib/utils/**`
+- Implementing RBAC / UI visibility / redirects
+
+---
+
+## ♻️ Reference-first development
+
+- ALWAYS base new feature on existing page/component
+- MUST explicitly mention:
+  - reference file
+  - reused pattern
+  - differences
+
+- NEVER:
+  - invent new architecture if similar exists
+  - introduce new libraries
+
+---
+
+## 📊 Tables & pagination
+
+Follow `users` page pattern strictly:
+
+- Setup:
+  - `new DataHandler(...)`
+  - `handler.getRows()`
+  - `handler.onChange(...) → paginate API`
+  - `handler.invalidate()` after mutations
+
+- UI:
+  - `Datatable`
+  - `Th`, `ThFilter`
+  - `Search`
+  - `RowsPerPage`
+
+- DO NOT:
+  - implement custom pagination logic
+  - deviate from existing structure
+
+---
+
+## 🧪 Forms & validation
+
+- Use:
+  - `createForm` (svelte-forms-lib)
+  - `yup` validationSchema
+
+- Structure:
+  - `initialValues`
+  - `validationSchema`
+  - `onSubmit`
+
+- Naming:
+  - follow users pages (`userForm`, `userFormError`, etc.)
+
+- Validation:
+  - reuse existing validators (e.g. `checkIfEmailReg`)
+  - do not bypass yup schema
+
+- Submit:
+  - `on:submit|preventDefault={handleSubmit}`
+
+---
+
+## 🔌 API usage
+
+- ALWAYS reuse:
+  - `$lib/utils/api`
+  - `$lib/utils/activity-api`
+
+- Pattern:
+  - check `response.statusCode`
+  - use `response.data`
+  - handle errors (toast/log)
+
+- NEVER:
+  - use raw fetch if helper exists
+  - assume response structure
+
+---
+
+## 🧠 State management
+
+- Prefer:
+  - local state for local logic
+  - `writable` stores for UI state (dialogs, filters)
+
+- Reuse:
+  - `$lib/stores/**`
+  - `userStore` for user context
+
+- Avoid:
+  - unnecessary global stores
+  - duplicated state logic
+
+---
+
+## ⚡ Svelte best practices (CRITICAL)
+
+- Prefer `$:` over manual subscriptions
+- Use `bind:value` where possible
+- Avoid React-like patterns:
+  - no effect-like logic
+  - no over-abstraction
+
+- Keep:
+  - logic simple
+  - logic close to usage
+
+---
+
+## ♻️ Reuse & components
+
+- Prefer existing:
+  - UI components (`$lib/components/ui`)
+  - dropdowns / selectors
+  - helpers
+
+- DO NOT:
+  - create new component if similar exists
+
+---
+
+## 🌍 i18n
+
+- ALWAYS use `$t` / `t`
+- NEVER hardcode UI text
+- Follow existing key naming
+
+---
+
+## 🧭 Navigation & UX
+
+- Use `goto` from `$app/navigation`
+
+- Preserve:
+  - `ADMIN_BASE_TABS`
+  - layout structure
+  - visual consistency (admin green theme)
+
+---
+
+## 🔐 RBAC tasks
+
+User MUST provide:
+
+- Page/Route
+- UI changes
+- Redirect rules
+- Bypass roles
+- Modal details
+
+If missing:
+→ ask 1–3 clarifying questions
+→ DO NOT guess
+
+---
+
+## ♻️ When modifying existing code
+
+- DO NOT rewrite entire file
+- Apply minimal diff only
+
+- Preserve:
+  - structure
+  - naming
+  - formatting
+
+- Explain:
+  - what changed
+  - why
+
+---
+
+## 🔍 Self-check before final answer (MANDATORY)
+
+Before finishing:
+
+- Check:
+  - ❓ Is there an existing pattern I missed?
+  - ♻️ Did I reuse everything possible?
+  - 🌍 Are all texts using i18n?
+  - 🔌 Did I follow API pattern?
+  - ⚡ Is this idiomatic Svelte?
+
+If any answer is "no":
+→ fix before returning result
+
+---
+
+## 🚫 Reliability rules
+
+- If unsure:
+  - say "not found"
+  - do NOT guess
+
+- Do NOT:
+  - invent APIs
+  - invent utils
+  - invent components
+
+- Prefer:
+  - asking clarification
+  - referencing real code
+
+---
+
+## 🧩 Output format (IMPORTANT)
+
+When implementing:
+
+1. Reference:
+   - files used
+
+2. Plan:
+   - reused elements
+   - approach
+
+3. Code:
+   - minimal diff or new code
+
+4. Explanation:
+   - what changed
+   - why
