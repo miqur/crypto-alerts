@@ -8,6 +8,8 @@ export interface MomentumInput {
 
 export interface MomentumSignals {
 	shortTermChangePercent: number | null;
+	shortTermChange5mPercent: number | null;
+	shortTermChange15mPercent: number | null;
 	volumeSpike: boolean;
 	volumeRatio: number | null;
 	momentumScore: number;
@@ -24,10 +26,10 @@ interface VolumeBaseline {
 	samples: number;
 }
 
-const MIN_SNAPSHOT_GAP_MS = 5 * 60 * 1000;
-const MAX_SNAPSHOT_AGE_MS = 15 * 60 * 1000;
+const MIN_SNAPSHOT_GAP_MS = 30 * 1000;
+const MAX_SNAPSHOT_AGE_MS = 20 * 60 * 1000;
 const volumeBaselines = new Map<string, VolumeBaseline>();
-const priceSnapshots = new Map<string, Snapshot>();
+const priceSnapshots = new Map<string, Snapshot[]>();
 
 export function detectVolumeSpike(
 	coinKey: string,
@@ -61,17 +63,19 @@ export function detectVolumeSpike(
 }
 
 export function computeMomentumSignals(input: MomentumInput): MomentumSignals {
-	const shortTermChangePercent = getShortTermPriceChangePercent(input.coinKey, input.currentPrice);
+	const shortTermChanges = getShortTermPriceChanges(input.coinKey, input.currentPrice);
 	const volume = detectVolumeSpike(input.coinKey, input.totalVolume);
 	const score = computeMomentumScore({
 		priceChange24h: input.priceChange24h,
-		shortTermChangePercent,
+		shortTermChangePercent: shortTermChanges.change5m,
 		volumeSpike: volume.spike,
 		sentimentLabel: input.sentimentLabel
 	});
 
 	return {
-		shortTermChangePercent,
+		shortTermChangePercent: shortTermChanges.change5m,
+		shortTermChange5mPercent: shortTermChanges.change5m,
+		shortTermChange15mPercent: shortTermChanges.change15m,
 		volumeSpike: volume.spike,
 		volumeRatio: volume.ratio,
 		momentumScore: score,
@@ -112,24 +116,45 @@ function scoreToStrength(score: number): 'weak' | 'medium' | 'strong' {
 	return 'weak';
 }
 
-function getShortTermPriceChangePercent(coinKey: string, currentPrice: number): number | null {
+function getShortTermPriceChanges(
+	coinKey: string,
+	currentPrice: number
+): { change5m: number | null; change15m: number | null } {
 	const key = coinKey.toLowerCase();
 	const now = Date.now();
 	const current = sanitizeNonNegative(currentPrice);
-	const prev = priceSnapshots.get(key);
+	const history = priceSnapshots.get(key) ?? [];
 
-	priceSnapshots.set(key, { price: current, timestamp: now });
+	const nextHistory = history.filter((snapshot) => now - snapshot.timestamp <= MAX_SNAPSHOT_AGE_MS);
+	const change5m = getChangeFromSnapshot(current, findSnapshotBefore(nextHistory, now - 5 * 60 * 1000));
+	const change15m = getChangeFromSnapshot(
+		current,
+		findSnapshotBefore(nextHistory, now - 15 * 60 * 1000)
+	);
 
-	if (!prev || prev.price <= 0) {
+	const latestSnapshot = nextHistory[nextHistory.length - 1];
+	if (!latestSnapshot || now - latestSnapshot.timestamp >= MIN_SNAPSHOT_GAP_MS) {
+		nextHistory.push({ price: current, timestamp: now });
+	}
+	priceSnapshots.set(key, nextHistory);
+
+	return { change5m, change15m };
+}
+
+function findSnapshotBefore(history: Snapshot[], targetTs: number): Snapshot | null {
+	for (let i = history.length - 1; i >= 0; i -= 1) {
+		if (history[i].timestamp <= targetTs) {
+			return history[i];
+		}
+	}
+	return null;
+}
+
+function getChangeFromSnapshot(currentPrice: number, snapshot: Snapshot | null): number | null {
+	if (!snapshot || snapshot.price <= 0) {
 		return null;
 	}
-
-	const ageMs = now - prev.timestamp;
-	if (ageMs < MIN_SNAPSHOT_GAP_MS || ageMs > MAX_SNAPSHOT_AGE_MS) {
-		return null;
-	}
-
-	return ((current - prev.price) / prev.price) * 100;
+	return ((currentPrice - snapshot.price) / snapshot.price) * 100;
 }
 
 function sanitizeNonNegative(value: number): number {

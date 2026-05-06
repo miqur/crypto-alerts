@@ -75,10 +75,12 @@ async function formatAlertsForTelegram(alerts: Alert[]): Promise<string> {
 		const signedChange = `${alert.priceChange24h >= 0 ? '+' : ''}${alert.priceChange24h.toFixed(1)}%`;
 		const confidence = formatConfidenceRu(alert.confidence);
 		const strength = formatSignalStrength(alert.signalStrength);
-		const reason = formatReasonRu(alert.signal, alert.confidence);
+		const decision = formatDecision(alert.decision);
 
 		message += `\n\n${typeEmoji} ${alert.coinName}  ${signedChange}  •  ${directionLabel}`;
-		message += `\n${reason}`;
+		message += `\n${alert.reason}`;
+		message += `\nКлассификация: ${decision}`;
+		message += `\nДействие: ${alert.actionHint}`;
 		message += `\n└ Уверенность: ${confidence} ${strength}`;
 	});
 
@@ -134,28 +136,19 @@ function formatConfidenceRu(confidence: Alert['confidence']): string {
 	return 'Низкая';
 }
 
-function formatReasonRu(signal: Alert['signal'], confidence: Alert['confidence']): string {
-	if (signal === 'bullish') {
-		if (confidence === 'high') {
-			return 'Импульс вверх усиливается, возможен пробой.';
-		}
-
-		if (confidence === 'medium') {
-			return 'Сильное движение вверх на позитивном фоне.';
-		}
-
-		return 'Смещение вверх есть, но подтверждение пока слабое.';
+function formatDecision(decision: Alert['decision']): string {
+	switch (decision) {
+		case 'early_breakout':
+			return '⚡ early_breakout';
+		case 'breakout':
+			return '🔥 breakout';
+		case 'pullback':
+			return 'pullback';
+		case 'continuation':
+			return 'continuation';
+		default:
+			return 'uncertain';
 	}
-
-	if (confidence === 'high') {
-		return 'Сильное давление продавцов, риск продолжения снижения.';
-	}
-
-	if (confidence === 'medium') {
-		return 'Продавцы усиливают давление, нисходящий импульс растет.';
-	}
-
-	return 'Смещение вниз есть, но сигнал пока слабый.';
 }
 
 function formatModelTier(model: string): string {

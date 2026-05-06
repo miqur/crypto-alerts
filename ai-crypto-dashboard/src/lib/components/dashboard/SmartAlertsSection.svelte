@@ -16,6 +16,36 @@
 				return 'bg-gray-100 text-gray-800';
 		}
 	}
+
+	function getDecisionBadgeClass(decision: Alert['decision']): string {
+		switch (decision) {
+			case 'early_breakout':
+				return 'border-orange-300/50 bg-orange-500/20 text-orange-100';
+			case 'breakout':
+				return 'border-emerald-300/40 bg-emerald-500/15 text-emerald-100';
+			case 'continuation':
+				return 'border-cyan-300/40 bg-cyan-500/15 text-cyan-100';
+			case 'pullback':
+				return 'border-amber-300/40 bg-amber-500/15 text-amber-100';
+			default:
+				return 'border-slate-300/30 bg-slate-500/15 text-slate-100';
+		}
+	}
+
+	function getDecisionLabel(decision: Alert['decision']): string {
+		switch (decision) {
+			case 'early_breakout':
+				return '⚡ early_breakout';
+			case 'breakout':
+				return '🔥 breakout';
+			case 'continuation':
+				return 'continuation';
+			case 'pullback':
+				return 'pullback';
+			default:
+				return 'uncertain';
+		}
+	}
 </script>
 
 {#if alerts.length > 0 || alertsLoading}
@@ -52,7 +82,30 @@
 								{alert.severity}
 							</span>
 						</div>
-						<p class="text-slate-200">{alert.message}</p>
+						<p class="text-sm font-medium text-slate-100">{alert.reason}</p>
+						<p class="mt-1 text-xs text-slate-300">Действие: {alert.actionHint}</p>
+						<div class="mt-2 flex items-center gap-2 text-xs">
+							<span
+								class="rounded-full border px-2 py-1 uppercase tracking-wide {getDecisionBadgeClass(
+									alert.decision
+								)}"
+							>
+								{getDecisionLabel(alert.decision)}
+							</span>
+							<span class="text-slate-400">
+								24ч: {alert.priceChange24h >= 0 ? '+' : ''}{alert.priceChange24h.toFixed(1)}%
+							</span>
+							{#if alert.shortTermChange5mPercent !== null}
+								<span class="text-slate-400">
+									5м: {alert.shortTermChange5mPercent >= 0 ? '+' : ''}{alert.shortTermChange5mPercent.toFixed(1)}%
+								</span>
+							{/if}
+							{#if alert.shortTermChange15mPercent !== null}
+								<span class="text-slate-400">
+									15м: {alert.shortTermChange15mPercent >= 0 ? '+' : ''}{alert.shortTermChange15mPercent.toFixed(1)}%
+								</span>
+							{/if}
+						</div>
 					</div>
 				{/each}
 			</div>

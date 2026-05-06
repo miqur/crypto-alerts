@@ -117,6 +117,18 @@ async function buildAlertsMessage(): Promise<string> {
 				`${strengthIcon} ${alert.coinName} — ${formatSignedPercent(alert.priceChange24h)}`
 			);
 			lines.push(toShortReason(alert));
+			lines.push(`Действие: ${alert.actionHint}`);
+			if (alert.shortTermChange5mPercent !== null || alert.shortTermChange15mPercent !== null) {
+				const short5m =
+					alert.shortTermChange5mPercent === null
+						? 'н/д'
+						: `${alert.shortTermChange5mPercent >= 0 ? '+' : ''}${alert.shortTermChange5mPercent.toFixed(1)}%`;
+				const short15m =
+					alert.shortTermChange15mPercent === null
+						? 'н/д'
+						: `${alert.shortTermChange15mPercent >= 0 ? '+' : ''}${alert.shortTermChange15mPercent.toFixed(1)}%`;
+				lines.push(`Краткосрок: 5м ${short5m}, 15м ${short15m}`);
+			}
 			lines.push('');
 		}
 		lines.push('Подсказка: следите за продолжением импульса и подтверждением по объему.');
@@ -268,26 +280,28 @@ async function buildCurrencyMessage(): Promise<string> {
 
 function toShortReason(alert: {
 	signal: 'bullish' | 'bearish' | 'uncertain';
-	signalStrength: 'strong' | 'medium' | 'weak';
-	volumeSpike: boolean;
+	decision: 'early_breakout' | 'breakout' | 'pullback' | 'continuation' | 'uncertain';
+	reason: string;
 }): string {
-	if (alert.signal === 'bullish') {
-		if (alert.signalStrength === 'strong') {
-			return alert.volumeSpike
-				? 'Сильный восходящий импульс, объем подтверждает движение.'
-				: 'Сильный восходящий импульс, возможен пробой.';
-		}
-		return 'Умеренный рост, нужен дополнительный импульс.';
+	const decisionLabel = formatDecisionLabel(alert.decision);
+	return `${decisionLabel}. ${alert.reason}`;
+}
+
+function formatDecisionLabel(
+	decision: 'early_breakout' | 'breakout' | 'pullback' | 'continuation' | 'uncertain'
+): string {
+	switch (decision) {
+		case 'early_breakout':
+			return '⚡ Классификация: early_breakout';
+		case 'breakout':
+			return '🔥 Классификация: breakout';
+		case 'pullback':
+			return 'Классификация: pullback';
+		case 'continuation':
+			return 'Классификация: continuation';
+		default:
+			return 'Классификация: uncertain';
 	}
-	if (alert.signal === 'bearish') {
-		if (alert.signalStrength === 'strong') {
-			return alert.volumeSpike
-				? 'Сильное давление продавцов, объем на стороне снижения.'
-				: 'Давление продавцов растет, риск продолжения отката.';
-		}
-		return 'Снижение умеренное, подтверждение пока слабое.';
-	}
-	return 'Сигнал неопределенный, направление не подтверждено.';
 }
 
 function getBtcShortTermChange(currentPrice: number): { change5m: number; change15m: number } {
