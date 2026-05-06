@@ -31,6 +31,9 @@
 	let alertsLoading = $state(false);
 	let currencyRates = $state<CurrencyRateItem[]>([]);
 
+	const MIN_TICKER_ITEMS = 12;
+	const MIN_CURRENCY_TICKER_ITEMS = 10;
+
 	onMount(async () => {
 		try {
 			const initialData = await loadInitialDashboardData();
@@ -84,18 +87,41 @@
 			maximumFractionDigits: value >= 100 ? 0 : 2
 		})}`;
 	}
+
+	function repeatForTicker<T>(items: T[], minItems: number): T[] {
+		if (items.length === 0) {
+			return [];
+		}
+		const repeats = Math.max(2, Math.ceil(minItems / items.length));
+		return Array.from({ length: repeats }, () => items).flat();
+	}
+
+	const marketTickerItems = $derived(repeatForTicker(coins, MIN_TICKER_ITEMS));
+	const currencyTickerItems = $derived(repeatForTicker(currencyRates, MIN_CURRENCY_TICKER_ITEMS));
+	const isFallbackMode = $derived(
+		coins.length > 0 &&
+			coins.every((coin) => coin.current_price === 0 && coin.price_change_percentage_24h === 0)
+	);
 </script>
 
 <div
 	class="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,#1e293b_0%,#020617_60%)] p-6 pt-32 text-slate-100"
 >
+	{#if isFallbackMode}
+		<div
+			class="mx-auto mb-4 w-full max-w-6xl rounded-lg border border-amber-300/35 bg-amber-400/10 px-4 py-2 text-xs text-amber-100"
+		>
+			Данные рынка временно в деградации: возможны неточные цены и изменения.
+		</div>
+	{/if}
+
 	{#if coins.length > 0}
 		<div
 			class="fixed top-0 right-0 left-0 z-50 overflow-hidden border-b border-cyan-300/20 bg-slate-950/85 backdrop-blur-md"
 		>
 			<div class="ticker-track py-2">
 				<div class="ticker-content">
-					{#each [...coins, ...coins] as coin, idx (`${coin.id}-${idx}`)}
+					{#each marketTickerItems as coin, idx (`${coin.id}-${idx}`)}
 						<div class="ticker-item">
 							<span class="font-semibold text-cyan-200">{coin.name}</span>
 							<span class="text-slate-300">{formatPrice(coin.current_price)}</span>
@@ -121,7 +147,7 @@
 		>
 			<div class="ticker-track mt-[3px] py-1">
 				<div class="ticker-content ticker-content-reverse">
-					{#each [...currencyRates, ...currencyRates] as rate, idx (`${rate.bank}-${idx}`)}
+					{#each currencyTickerItems as rate, idx (`${rate.bank}-${idx}`)}
 						<div class="ticker-item currency-ticker-item border-violet-300/40">
 							<span class="font-semibold text-violet-200/95">{rate.bank}</span>
 							{#if rate.official}
@@ -199,6 +225,10 @@
 		min-width: max-content;
 		animation: ticker-scroll 34s linear infinite;
 		padding-inline: 1rem;
+	}
+
+	.ticker-track:hover .ticker-content {
+		animation-play-state: paused;
 	}
 
 	.ticker-item {

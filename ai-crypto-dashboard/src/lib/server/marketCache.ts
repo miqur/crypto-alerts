@@ -33,7 +33,7 @@ function getFallbackCoins(): CoinData[] {
 			current_price: 0,
 			total_volume: 0,
 			price_change_percentage_24h: 0,
-			image: ''
+			image: 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png'
 		},
 		{
 			id: 'ethereum',
@@ -41,7 +41,7 @@ function getFallbackCoins(): CoinData[] {
 			current_price: 0,
 			total_volume: 0,
 			price_change_percentage_24h: 0,
-			image: ''
+			image: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png'
 		},
 		{
 			id: 'the-open-network',
@@ -49,7 +49,7 @@ function getFallbackCoins(): CoinData[] {
 			current_price: 0,
 			total_volume: 0,
 			price_change_percentage_24h: 0,
-			image: ''
+			image: 'https://assets.coingecko.com/coins/images/17980/large/ton_symbol.png'
 		}
 	];
 }
@@ -166,7 +166,13 @@ async function fetchCoinsFromCoinGeckoWithRetry(): Promise<CoinData[]> {
 				console.warn('CoinGecko failed; using stale cached market data.', err);
 				return cache.data;
 			}
-			console.error('CoinGecko failed; using fallback market data.', err);
+			console.warn('CoinGecko failed; trying emergency market source.', err);
+			const emergencyData = await fetchEmergencyCoins();
+			if (emergencyData.length > 0) {
+				console.warn('Emergency source used for market data.');
+				return emergencyData;
+			}
+			console.error('All market sources failed; using static fallback data.');
 			return getFallbackCoins();
 		}
 	}
@@ -257,6 +263,99 @@ async function fetchTopCoins(): Promise<CoinData[]> {
 	}
 
 	return topData;
+}
+
+async function fetchEmergencyCoins(): Promise<CoinData[]> {
+	try {
+		const response = await fetch('https://api.coincap.io/v2/assets?limit=12');
+		if (!response.ok) {
+			return [];
+		}
+
+		const payload = (await response.json()) as {
+			data?: Array<{
+				id?: string;
+				name?: string;
+				symbol?: string;
+				priceUsd?: string;
+				changePercent24Hr?: string;
+				volumeUsd24Hr?: string;
+			}>;
+		};
+		const data = payload.data ?? [];
+		if (data.length === 0) {
+			return [];
+		}
+
+		const mapped = data
+			.map((asset) => {
+				const id = normalizeAssetId(asset.id, asset.symbol);
+				const name = normalizeAssetName(asset.name, asset.symbol);
+				const currentPrice = Number(asset.priceUsd ?? 0);
+				const change24h = Number(asset.changePercent24Hr ?? 0);
+				const volume = Number(asset.volumeUsd24Hr ?? 0);
+				return {
+					id,
+					name,
+					current_price: Number.isFinite(currentPrice) ? currentPrice : 0,
+					total_volume: Number.isFinite(volume) ? volume : 0,
+					price_change_percentage_24h: Number.isFinite(change24h) ? change24h : 0,
+					image: coinImageById(id)
+				} satisfies CoinData;
+			})
+			.filter((coin) => coin.id !== 'unknown');
+
+		const withTon = ensureTonInEmergencySet(mapped);
+		return withTon.slice(0, 10);
+	} catch (error) {
+		console.warn('Emergency market source failed.', error);
+		return [];
+	}
+}
+
+function ensureTonInEmergencySet(coins: CoinData[]): CoinData[] {
+	const hasTon = coins.some((coin) => coin.id === 'the-open-network');
+	if (hasTon) {
+		return coins;
+	}
+
+	const tonBySymbol = coins.find((coin) => coin.name.toLowerCase().includes('ton'));
+	if (tonBySymbol) {
+		return coins.map((coin) =>
+			coin === tonBySymbol ? { ...coin, id: 'the-open-network', name: 'TON' } : coin
+		);
+	}
+
+	return [...coins, getFallbackCoins()[2]];
+}
+
+function normalizeAssetId(rawId?: string, symbol?: string): string {
+	const id = (rawId ?? '').toLowerCase().trim();
+	const sym = (symbol ?? '').toLowerCase().trim();
+	if (id === 'toncoin' || sym === 'ton') return 'the-open-network';
+	if (id) return id;
+	return 'unknown';
+}
+
+function normalizeAssetName(rawName?: string, symbol?: string): string {
+	if (symbol?.toUpperCase() === 'TON') return 'TON';
+	return rawName?.trim() || symbol?.toUpperCase() || 'Unknown';
+}
+
+function coinImageById(id: string): string {
+	const map: Record<string, string> = {
+		bitcoin: 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png',
+		ethereum: 'https://assets.coingecko.com/coins/images/279/large/ethereum.png',
+		'the-open-network': 'https://assets.coingecko.com/coins/images/17980/large/ton_symbol.png',
+		tether: 'https://assets.coingecko.com/coins/images/325/large/Tether.png',
+		'usd-coin': 'https://assets.coingecko.com/coins/images/6319/large/USD_Coin_icon.png',
+		bnb: 'https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png',
+		solana: 'https://assets.coingecko.com/coins/images/4128/large/solana.png',
+		xrp: 'https://assets.coingecko.com/coins/images/44/large/xrp-symbol-white-128.png',
+		dogecoin: 'https://assets.coingecko.com/coins/images/5/large/dogecoin.png',
+		cardano: 'https://assets.coingecko.com/coins/images/975/large/cardano.png'
+	};
+	return map[id] ?? '';
 }
 
 function wait(ms: number): Promise<void> {
