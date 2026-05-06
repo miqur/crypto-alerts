@@ -43,8 +43,8 @@
 			loading = false;
 		}
 
-		await refreshNews();
-		await loadCurrencyRates();
+		// Load in parallel so currency ticker doesn't wait for AI news pipeline.
+		await Promise.allSettled([refreshNews(), loadCurrencyRates()]);
 	});
 
 	async function refreshNews() {
@@ -87,7 +87,7 @@
 </script>
 
 <div
-	class="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,#1e293b_0%,#020617_60%)] p-6 pt-28 text-slate-100"
+	class="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,#1e293b_0%,#020617_60%)] p-6 pt-32 text-slate-100"
 >
 	{#if coins.length > 0}
 		<div
@@ -117,9 +117,9 @@
 
 	{#if currencyRates.length > 0}
 		<div
-			class="fixed top-10 right-0 left-0 z-40 overflow-hidden border-b border-violet-300/25 bg-[linear-gradient(90deg,rgba(15,23,42,0.95),rgba(76,29,149,0.22),rgba(15,23,42,0.95))] shadow-[0_4px_20px_rgba(76,29,149,0.16)] backdrop-blur-md"
+			class="fixed top-12 right-0 left-0 z-40 overflow-hidden border-b border-violet-300/25 bg-[linear-gradient(90deg,rgba(15,23,42,0.95),rgba(76,29,149,0.22),rgba(15,23,42,0.95))] shadow-[0_4px_20px_rgba(76,29,149,0.16)] backdrop-blur-md"
 		>
-			<div class="ticker-track py-1">
+			<div class="ticker-track mt-[3px] py-1">
 				<div class="ticker-content ticker-content-reverse">
 					{#each [...currencyRates, ...currencyRates] as rate, idx (`${rate.bank}-${idx}`)}
 						<div class="ticker-item currency-ticker-item border-violet-300/40">
