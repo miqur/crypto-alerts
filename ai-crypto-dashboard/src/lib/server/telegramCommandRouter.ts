@@ -1,3 +1,4 @@
+import { env } from '$env/dynamic/private';
 import { generateAlerts } from '$lib/alerts/generateAlerts';
 import { computeMomentumSignals } from '$lib/alerts/momentum';
 import { getTopCoins } from '$lib/api/coins';
@@ -27,8 +28,11 @@ export async function handleTelegramCommand(
 		case '/btc':
 			reply = await buildBtcMessage();
 			break;
+		case '/healthz':
+			reply = await buildHealthzMessage();
+			break;
 		default:
-			reply = 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc';
+			reply = 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/healthz';
 			break;
 	}
 
@@ -43,6 +47,7 @@ function buildStartMessage(chatId: number): string {
 		'/status — краткий статус рынка',
 		'/alerts — топ-3 текущих сигнала',
 		'/btc — быстрый статус по BTC',
+		'/healthz — статус доступности сервиса',
 		'',
 		`Ваш chat_id: ${chatId}`,
 		`Подключено пользователей: ${knownUsers.size}`
@@ -167,6 +172,54 @@ async function buildBtcMessage(): Promise<string> {
 		console.error('Failed to build /btc response:', error);
 		return 'Не удалось получить BTC данные. Попробуйте позже.';
 	}
+}
+
+async function buildHealthzMessage(): Promise<string> {
+	const baseUrl = resolveServiceBaseUrl();
+	const healthUrl = `${baseUrl}/healthz`;
+	const checkedAt = new Date().toLocaleString('ru-RU');
+
+	try {
+		const response = await fetch(healthUrl, {
+			headers: { Accept: 'application/json' }
+		});
+
+		if (!response.ok) {
+			return [
+				'🛑 Health check',
+				`URL: ${healthUrl}`,
+				`Статус: HTTP ${response.status}`,
+				`Проверка: ${checkedAt}`,
+				'',
+				'Как поднять сервис:',
+				'1) Render -> Service -> Manual Deploy -> Deploy latest commit',
+				'2) Проверь переменные окружения и Health Check Path (/healthz)',
+				'3) Открой логи Render и проверь ошибки старта'
+			].join('\n');
+		}
+
+		return ['✅ Health check', `URL: ${healthUrl}`, 'Статус: сервис доступен', `Проверка: ${checkedAt}`].join(
+			'\n'
+		);
+	} catch (error) {
+		console.error('Failed to build /healthz response:', error);
+		return [
+			'🛑 Health check',
+			`URL: ${healthUrl}`,
+			'Статус: сервис недоступен',
+			`Проверка: ${checkedAt}`,
+			'',
+			'Как поднять сервис:',
+			'1) Render -> Service -> Manual Deploy -> Deploy latest commit',
+			'2) Убедись, что TELEGRAM_UPDATES_MODE=webhook и health endpoint доступен',
+			'3) Проверь последние логи Render (Build/Runtime)'
+		].join('\n');
+	}
+}
+
+function resolveServiceBaseUrl(): string {
+	const candidate = env.APP_BASE_URL?.trim() || env.RENDER_EXTERNAL_URL?.trim() || 'https://crypto-alerts-v0vi.onrender.com';
+	return candidate.replace(/\/+$/, '');
 }
 
 function toShortReason(alert: {
