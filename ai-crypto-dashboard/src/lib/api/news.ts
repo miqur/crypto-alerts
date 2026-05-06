@@ -43,31 +43,31 @@ function getMockNews(limit: number): NewsItem[] {
 	const mockNews = [
 		{
 			title: 'Bitcoin Surges Past $80,000 as Institutional Demand Grows',
-			url: 'https://example.com/bitcoin-surge',
+			url: 'https://www.coindesk.com/',
 			source: 'CryptoNews',
 			published_at: new Date().toISOString()
 		},
 		{
 			title: 'Ethereum Layer 2 Solutions Gain Traction with Lower Fees',
-			url: 'https://example.com/ethereum-l2',
+			url: 'https://cointelegraph.com/tags/ethereum',
 			source: 'BlockchainDaily',
 			published_at: new Date(Date.now() - 3600000).toISOString()
 		},
 		{
 			title: 'TON Ecosystem Expands with New DeFi Protocols',
-			url: 'https://example.com/ton-ecosystem',
+			url: 'https://ton.org/',
 			source: 'TON News',
 			published_at: new Date(Date.now() - 7200000).toISOString()
 		},
 		{
 			title: 'Regulatory Clarity Boosts Crypto Market Sentiment',
-			url: 'https://example.com/regulatory-clarity',
+			url: 'https://www.theblock.co/regulation',
 			source: 'CryptoReg',
 			published_at: new Date(Date.now() - 10800000).toISOString()
 		},
 		{
 			title: 'Stablecoins See Record Adoption in Cross-Border Payments',
-			url: 'https://example.com/stablecoin-adoption',
+			url: 'https://www.coindesk.com/tag/stablecoins/',
 			source: 'FinTech Today',
 			published_at: new Date(Date.now() - 14400000).toISOString()
 		}

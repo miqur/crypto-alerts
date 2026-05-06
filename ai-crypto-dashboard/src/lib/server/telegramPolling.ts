@@ -55,6 +55,16 @@ export function startTelegramPolling(): void {
 	void pollLoop();
 }
 
+export function stopTelegramPolling(reason = 'disabled'): void {
+	const state = getPollingState();
+	if (state.timer) {
+		clearTimeout(state.timer);
+		state.timer = null;
+	}
+	state.started = false;
+	console.log(`Telegram polling stopped: ${reason}`);
+}
+
 async function pollLoop(): Promise<void> {
 	const state = getPollingState();
 	const botToken = env.TELEGRAM_BOT_TOKEN?.trim();
@@ -81,6 +91,10 @@ async function pollLoop(): Promise<void> {
 
 		scheduleNextPoll(0);
 	} catch (error) {
+		const latestState = getPollingState();
+		if (!latestState.started) {
+			return;
+		}
 		console.error('Telegram polling failed:', error);
 		scheduleNextPoll(3000);
 	}

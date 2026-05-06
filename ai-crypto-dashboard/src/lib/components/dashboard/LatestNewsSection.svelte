@@ -23,6 +23,17 @@
 			minute: '2-digit'
 		});
 	}
+
+	function openNews(url: string): void {
+		if (!isNewsLinkAvailable(url)) {
+			return;
+		}
+		window.open(url, '_blank', 'noopener,noreferrer');
+	}
+
+	function isNewsLinkAvailable(url: string): boolean {
+		return Boolean(url && !url.includes('example.com'));
+	}
 </script>
 
 <div
@@ -48,14 +59,25 @@
 			{#each news.slice(0, 10) as item (item.url)}
 				<button
 					type="button"
-					onclick={() => window.open(item.url, '_blank', 'noopener,noreferrer')}
-					class="block w-full rounded-xl border border-slate-600/70 bg-slate-800/70 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-300/40 hover:bg-slate-800"
+					onclick={() => openNews(item.url)}
+					class={`block w-full rounded-xl border border-slate-600/70 bg-slate-800/70 p-4 text-left transition-all duration-300 ${
+						isNewsLinkAvailable(item.url)
+							? 'hover:-translate-y-0.5 hover:border-blue-300/40 hover:bg-slate-800'
+							: 'cursor-not-allowed opacity-70'
+					}`}
 				>
 					<h3 class="mb-2 font-medium text-slate-100 hover:text-blue-200">{item.title}</h3>
 					<div class="flex items-center gap-2 text-sm text-slate-400">
 						<span>{item.source}</span>
 						<span>•</span>
 						<span>{formatDate(item.published_at)}</span>
+						{#if !isNewsLinkAvailable(item.url)}
+							<span
+								class="ml-auto rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-200"
+							>
+								Источник недоступен
+							</span>
+						{/if}
 					</div>
 				</button>
 			{/each}
