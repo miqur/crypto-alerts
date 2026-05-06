@@ -1,6 +1,7 @@
 import { env } from '$env/dynamic/private';
 import { generateAlerts } from '$lib/alerts/generateAlerts';
 import { computeMomentumSignals } from '$lib/alerts/momentum';
+import { getUsdBynRates } from '$lib/api/currency';
 import { getTopCoins } from '$lib/api/coins';
 
 const knownUsers = new Set<number>();
@@ -31,8 +32,12 @@ export async function handleTelegramCommand(
 		case '/healthz':
 			reply = await buildHealthzMessage();
 			break;
+		case '/currency':
+			reply = await buildCurrencyMessage();
+			break;
 		default:
-			reply = 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/healthz';
+			reply =
+				'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/currency\n/healthz';
 			break;
 	}
 
@@ -47,6 +52,7 @@ function buildStartMessage(chatId: number): string {
 		'/status — краткий статус рынка',
 		'/alerts — топ-3 текущих сигнала',
 		'/btc — быстрый статус по BTC',
+		'/currency — курсы USD/BYN по банкам',
 		'/healthz — статус доступности сервиса',
 		'',
 		`Ваш chat_id: ${chatId}`,
@@ -198,9 +204,12 @@ async function buildHealthzMessage(): Promise<string> {
 			].join('\n');
 		}
 
-		return ['✅ Health check', `URL: ${healthUrl}`, 'Статус: сервис доступен', `Проверка: ${checkedAt}`].join(
-			'\n'
-		);
+		return [
+			'✅ Health check',
+			`URL: ${healthUrl}`,
+			'Статус: сервис доступен',
+			`Проверка: ${checkedAt}`
+		].join('\n');
 	} catch (error) {
 		console.error('Failed to build /healthz response:', error);
 		return [
@@ -218,8 +227,37 @@ async function buildHealthzMessage(): Promise<string> {
 }
 
 function resolveServiceBaseUrl(): string {
-	const candidate = env.APP_BASE_URL?.trim() || env.RENDER_EXTERNAL_URL?.trim() || 'https://crypto-alerts-v0vi.onrender.com';
+	const candidate =
+		env.APP_BASE_URL?.trim() ||
+		env.RENDER_EXTERNAL_URL?.trim() ||
+		'https://crypto-alerts-v0vi.onrender.com';
 	return candidate.replace(/\/+$/, '');
+}
+
+async function buildCurrencyMessage(): Promise<string> {
+	try {
+		const rates = await getUsdBynRates();
+		if (rates.length === 0) {
+			return 'Не удалось получить актуальные курсы USD/BYN.';
+		}
+
+		const lines = ['💱 USD/BYN — курсы банков', ''];
+		for (const rate of rates) {
+			if (rate.official) {
+				lines.push(`🏛 ${rate.bank}: ${rate.buy.toFixed(4)} (официальный)`);
+			} else {
+				lines.push(
+					`🏦 ${rate.bank}: покупка ${rate.buy.toFixed(4)} / продажа ${rate.sell.toFixed(4)}`
+				);
+			}
+		}
+
+		lines.push('', `Проверка: ${new Date().toLocaleString('ru-RU')}`);
+		return lines.join('\n');
+	} catch (error) {
+		console.error('Failed to build /currency response:', error);
+		return 'Не удалось получить курсы валют. Попробуйте чуть позже.';
+	}
 }
 
 function toShortReason(alert: {

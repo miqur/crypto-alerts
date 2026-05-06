@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { CoinData } from '$lib/api/coins';
+	import type { CurrencyRateItem } from '$lib/api/currency';
 	import type { NewsItem } from '$lib/api/news';
 	import type { Alert } from '$lib/alerts/generateAlerts';
 	import {
@@ -28,6 +29,7 @@
 	let sentimentLabel = $state<SentimentLabel | ''>('');
 	let sentimentLoading = $state(false);
 	let alertsLoading = $state(false);
+	let currencyRates = $state<CurrencyRateItem[]>([]);
 
 	onMount(async () => {
 		try {
@@ -42,6 +44,7 @@
 		}
 
 		await refreshNews();
+		await loadCurrencyRates();
 	});
 
 	async function refreshNews() {
@@ -65,6 +68,17 @@
 		}
 	}
 
+	async function loadCurrencyRates() {
+		try {
+			const res = await fetch('/api/currency');
+			if (!res.ok) return;
+			const data = (await res.json()) as CurrencyRateItem[];
+			currencyRates = data;
+		} catch (error) {
+			console.error('Failed to load currency rates:', error);
+		}
+	}
+
 	function formatPrice(value: number): string {
 		return `$${value.toLocaleString('en-US', {
 			maximumFractionDigits: value >= 100 ? 0 : 2
@@ -73,7 +87,7 @@
 </script>
 
 <div
-	class="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,#1e293b_0%,#020617_60%)] p-6 pt-20 text-slate-100"
+	class="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,#1e293b_0%,#020617_60%)] p-6 pt-28 text-slate-100"
 >
 	{#if coins.length > 0}
 		<div
@@ -94,6 +108,28 @@
 									? '+'
 									: ''}{coin.price_change_percentage_24h.toFixed(1)}%
 							</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if currencyRates.length > 0}
+		<div
+			class="fixed top-10 right-0 left-0 z-40 overflow-hidden border-b border-violet-300/25 bg-[linear-gradient(90deg,rgba(15,23,42,0.95),rgba(76,29,149,0.22),rgba(15,23,42,0.95))] shadow-[0_4px_20px_rgba(76,29,149,0.16)] backdrop-blur-md"
+		>
+			<div class="ticker-track py-1">
+				<div class="ticker-content ticker-content-reverse">
+					{#each [...currencyRates, ...currencyRates] as rate, idx (`${rate.bank}-${idx}`)}
+						<div class="ticker-item currency-ticker-item border-violet-300/40">
+							<span class="font-semibold text-violet-200/95">{rate.bank}</span>
+							{#if rate.official}
+								<span class="text-slate-200/95">USD/BYN: {rate.buy.toFixed(4)}</span>
+							{:else}
+								<span class="text-emerald-300/95">Пок. {rate.buy.toFixed(4)}</span>
+								<span class="text-rose-300/95">Прод. {rate.sell.toFixed(4)}</span>
+							{/if}
 						</div>
 					{/each}
 				</div>
@@ -173,6 +209,18 @@
 		border-radius: 9999px;
 		padding: 0.35rem 0.8rem;
 		background: rgba(15, 23, 42, 0.7);
+	}
+
+	.ticker-content-reverse {
+		animation-direction: reverse;
+		animation-duration: 30s;
+	}
+
+	.currency-ticker-item {
+		gap: 0.4rem;
+		padding: 0.15rem 0.6rem;
+		font-size: 0.72rem;
+		background: rgba(30, 41, 59, 0.75);
 	}
 
 	@keyframes ticker-scroll {
