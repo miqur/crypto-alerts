@@ -83,14 +83,14 @@ async function registerTelegramBotCommands(): Promise<void> {
 	}
 
 	const commands = [
-		{ command: 'start', description: 'Справка и клавиатура команд' },
-		{ command: 'status', description: 'Статус рынка (BTC, ETH, тренд)' },
-		{ command: 'alerts', description: 'Топ сигналов по рынку' },
-		{ command: 'btc', description: 'Курс и импульс Bitcoin' },
-		{ command: 'news', description: 'Топ-5 новостей крипторынка' },
-		{ command: 'currency', description: 'USD/BYN — курсы НБРБ и банков' },
-		{ command: 'healthz', description: 'Доступность сервиса' },
-		{ command: 'llm', description: 'Универсальный ИИ: /llm ваш вопрос' }
+		{ command: 'start', description: '👋 Справка и клавиатура команд' },
+		{ command: 'status', description: '📊 Статус рынка (BTC, ETH, тренд)' },
+		{ command: 'alerts', description: '🚨 Топ сигналов по рынку' },
+		{ command: 'btc', description: '₿ Курс и импульс Bitcoin' },
+		{ command: 'news', description: '📰 Топ-5 новостей крипторынка' },
+		{ command: 'currency', description: '💱 USD/BYN — курсы НБРБ и банков' },
+		{ command: 'healthz', description: '✅ Доступность сервиса' },
+		{ command: 'llm', description: '🤖 Универсальный ИИ: /llm ваш вопрос' }
 	];
 
 	const response = await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {

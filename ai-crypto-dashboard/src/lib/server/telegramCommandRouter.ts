@@ -12,6 +12,53 @@ const btcPriceHistory: Array<{ price: number; timestamp: number }> = [];
 const BTC_HISTORY_WINDOW_MS = 20 * 60 * 1000;
 const TELEGRAM_AI_MAX_INPUT_LENGTH = 500;
 
+/** После пустого /llm ждём следующий текст как вопрос к универсальному ИИ (меню Telegram шлёт /llm сразу). */
+const LLM_PENDING_TTL_MS = 5 * 60 * 1000;
+const llmPendingUntil = new Map<number, number>();
+
+const SLASH_COMMANDS = new Set([
+	'/start',
+	'/status',
+	'/alerts',
+	'/btc',
+	'/news',
+	'/currency',
+	'/healthz',
+	'/llm'
+]);
+
+function isLlmPending(chatId: number): boolean {
+	const until = llmPendingUntil.get(chatId);
+	if (until == null) {
+		return false;
+	}
+	if (Date.now() > until) {
+		llmPendingUntil.delete(chatId);
+		return false;
+	}
+	return true;
+}
+
+function setLlmPending(chatId: number): void {
+	llmPendingUntil.set(chatId, Date.now() + LLM_PENDING_TTL_MS);
+}
+
+function clearLlmPending(chatId: number): void {
+	llmPendingUntil.delete(chatId);
+}
+
+function buildLlmTwoStepHint(): string {
+	return [
+		'В меню команд Telegram выбранная команда сразу уходит в чат — строку в поле ввода «дописать» нельзя, это устроено в клиенте.',
+		'',
+		'Как спросить ИИ:',
+		'• отправьте следующим сообщением ваш вопрос одним текстом (я жду ответ до ~5 мин), или',
+		'• одной строкой: /llm ваш вопрос',
+		'',
+		'Команда /status и остальные отменяют это ожидание.'
+	].join('\n');
+}
+
 export async function handleTelegramCommand(
 	text: string,
 	chatId: number
@@ -23,39 +70,82 @@ export async function handleTelegramCommand(
 }> {
 	knownUsers.add(chatId);
 	const normalized = resolveTelegramMenuButton(text).trim();
-	const command = normalized.split(/\s+/)[0].toLowerCase();
+	const firstToken = normalized.split(/\s+/)[0].toLowerCase();
+
+	if (isLlmPending(chatId)) {
+		const isKnownSlash = normalized.startsWith('/') && SLASH_COMMANDS.has(firstToken);
+
+		if (!normalized.startsWith('/')) {
+			clearLlmPending(chatId);
+			const reply = await buildAIGenericReply(normalized, true);
+			return { command: 'llm_followup', reply };
+		}
+
+		if (isKnownSlash && firstToken !== '/llm') {
+			clearLlmPending(chatId);
+		} else if (firstToken === '/llm') {
+			const rest = normalized.replace(/^\/llm\s*/i, '').trim();
+			clearLlmPending(chatId);
+			if (rest.length > 0) {
+				const reply = await buildAIGenericReply(normalized, true);
+				return { command: '/llm', reply };
+			}
+			setLlmPending(chatId);
+			return { command: '/llm', reply: buildLlmTwoStepHint() };
+		} else if (normalized.startsWith('/') && !isKnownSlash) {
+			clearLlmPending(chatId);
+		}
+	}
+
+	const command = firstToken;
 
 	let reply: string;
 	let parseMode: 'HTML' | undefined;
 	let replyMarkup: ReturnType<typeof getTelegramMenuKeyboardMarkup> | undefined;
 	switch (command) {
 		case '/start':
+			clearLlmPending(chatId);
 			reply = buildStartMessage(chatId);
 			replyMarkup = getTelegramMenuKeyboardMarkup();
 			break;
 		case '/status':
+			clearLlmPending(chatId);
 			reply = await buildStatusMessage();
 			break;
 		case '/alerts':
+			clearLlmPending(chatId);
 			reply = await buildAlertsMessage();
 			break;
 		case '/btc':
+			clearLlmPending(chatId);
 			reply = await buildBtcMessage();
 			break;
 		case '/healthz':
+			clearLlmPending(chatId);
 			reply = await buildHealthzMessage();
 			break;
 		case '/currency':
+			clearLlmPending(chatId);
 			reply = await buildCurrencyMessage();
 			parseMode = 'HTML';
 			break;
 		case '/news':
+			clearLlmPending(chatId);
 			reply = await buildCryptoNewsMessage();
 			break;
-		case '/llm':
-			reply = await buildAIGenericReply(normalized, true);
+		case '/llm': {
+			const rest = normalized.replace(/^\/llm\s*/i, '').trim();
+			if (rest.length === 0) {
+				setLlmPending(chatId);
+				reply = buildLlmTwoStepHint();
+			} else {
+				clearLlmPending(chatId);
+				reply = await buildAIGenericReply(normalized, true);
+			}
 			break;
+		}
 		default:
+			clearLlmPending(chatId);
 			reply = command.startsWith('/')
 				? 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/news\n/currency\n/healthz\n/llm <запрос>\n\nПодсказка: откройте список команд кнопкой «/» у поля ввода или нажмите «❓ Справка» на клавиатуре.'
 				: await buildAIGenericReply(normalized, false);
