@@ -5,6 +5,7 @@ import { getUsdBynRates } from '$lib/api/currency';
 import { getTopCoins } from '$lib/api/coins';
 import { generateAIResponseWithMeta } from '$lib/server/ai/provider';
 import { getServerCryptoNews } from '$lib/server/cryptoNews';
+import { runAlertCheck } from '$lib/server/scheduler';
 import { getTelegramReplyKeyboardRemove, type TelegramReplyMarkup } from '$lib/server/telegram';
 
 const knownUsers = new Set<number>();
@@ -123,6 +124,9 @@ export async function handleTelegramCommand(
 		case '/healthz':
 			clearLlmPending(chatId);
 			reply = await buildHealthzMessage();
+			void runAlertCheck().catch((err) => {
+				console.error('runAlertCheck after Telegram /healthz failed:', err);
+			});
 			break;
 		case '/currency':
 			clearLlmPending(chatId);

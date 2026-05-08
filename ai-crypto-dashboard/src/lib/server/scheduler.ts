@@ -164,13 +164,6 @@ function buildTelegramMessage(
 	message += `\nМодель: ${actualModel}`;
 	message += `\nТариф: ${formatModelTier(actualModel)}`;
 
-	if (debug) {
-		message += `\n\n🧪 Debug`;
-		message += `\nProvider: OpenRouter`;
-		message += `\nModel: ${actualModel}`;
-		message += `\nSentiment: ${debug.sentiment} (${debug.sentimentConfidence.toFixed(2)})`;
-	}
-
 	return message;
 }
 
