@@ -3,10 +3,12 @@ import { generateAlerts } from '$lib/alerts/generateAlerts';
 import { computeMomentumSignals } from '$lib/alerts/momentum';
 import { getUsdBynRates } from '$lib/api/currency';
 import { getTopCoins } from '$lib/api/coins';
+import { generateAIResponseWithMeta } from '$lib/server/ai/provider';
 
 const knownUsers = new Set<number>();
 const btcPriceHistory: Array<{ price: number; timestamp: number }> = [];
 const BTC_HISTORY_WINDOW_MS = 20 * 60 * 1000;
+const TELEGRAM_AI_MAX_INPUT_LENGTH = 500;
 
 export async function handleTelegramCommand(
 	text: string,
@@ -36,12 +38,39 @@ export async function handleTelegramCommand(
 			reply = await buildCurrencyMessage();
 			break;
 		default:
-			reply =
-				'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/currency\n/healthz';
+			reply = command.startsWith('/')
+				? 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/currency\n/healthz'
+				: await buildAIGenericReply(text);
 			break;
 	}
 
 	return { command, reply };
+}
+
+async function buildAIGenericReply(text: string): Promise<string> {
+	const trimmed = text.trim();
+	if (!trimmed) {
+		return 'Напишите сообщение, и я постараюсь помочь.';
+	}
+
+	if (trimmed.length > TELEGRAM_AI_MAX_INPUT_LENGTH) {
+		return `Сообщение слишком длинное. Отправьте до ${TELEGRAM_AI_MAX_INPUT_LENGTH} символов.`;
+	}
+
+	try {
+		const prompt = [
+			'Ты ассистент в Telegram-боте crypto-dashboard.',
+			'Отвечай на русском, коротко и по делу (1-4 предложения).',
+			'Если вопрос про рынок/крипту — дай практичный и осторожный ответ без финансовых гарантий.',
+			`Пользователь: ${trimmed}`
+		].join('\n');
+		const ai = await generateAIResponseWithMeta(prompt);
+		const clean = ai.content.trim();
+		return clean.length > 0 ? clean : 'Сейчас не получилось сформировать ответ. Попробуйте еще раз.';
+	} catch (error) {
+		console.error('Failed to build generic Telegram AI response:', error);
+		return 'Сейчас ИИ недоступен. Попробуйте еще раз чуть позже.';
+	}
 }
 
 function buildStartMessage(chatId: number): string {
