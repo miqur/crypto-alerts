@@ -544,6 +544,11 @@ async function buildCurrencyMessage(): Promise<string> {
 			blocks.push('<b>🏦 Коммерческие курсы</b>');
 			blocks.push(`<pre>${preLines.join('\n')}</pre>`);
 			blocks.push('');
+		} else if (official && official.buy > 0) {
+			blocks.push(
+				`<i>${escapeTelegramHtml('Коммерческие курсы (banki24.by) сейчас недоступны с сервера — показан только курс НБРБ.')}</i>`,
+				''
+			);
 		}
 
 		blocks.push(`<i>🕐 ${escapeTelegramHtml(checkedAt)}</i>`);

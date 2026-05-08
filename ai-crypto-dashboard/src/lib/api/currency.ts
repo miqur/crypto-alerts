@@ -42,35 +42,47 @@ export async function getUsdBynRates(): Promise<CurrencyRateItem[]> {
 		return currencyCache.data;
 	}
 
+	let officialRate = 0;
 	try {
-		const [officialRate, pageText] = await Promise.all([fetchNbrbUsdRate(), fetchBanki24Page()]);
-		const bankRates = extractBankRates(pageText);
+		officialRate = await fetchNbrbUsdRate();
+	} catch (error) {
+		console.warn('NBRB USD rate failed:', error);
+	}
 
-		const data: CurrencyRateItem[] = [
-			{
-				bank: 'Нацбанк',
-				buy: officialRate,
-				sell: officialRate,
-				official: true
-			},
-			...bankRates
-		];
+	let pageText = '';
+	try {
+		pageText = await fetchBanki24Page();
+	} catch (error) {
+		console.warn('banki24.by fetch failed:', error);
+	}
 
+	const bankRates = extractBankRates(pageText);
+
+	const data: CurrencyRateItem[] = [
+		{
+			bank: 'Нацбанк',
+			buy: officialRate,
+			sell: officialRate,
+			official: true
+		},
+		...bankRates
+	];
+
+	const hasAnyRate =
+		(Number.isFinite(officialRate) && officialRate > 0) ||
+		bankRates.some((b) => b.buy > 0 && b.sell > 0);
+
+	if (hasAnyRate) {
 		currencyCache = { data, timestamp: now };
 		return data;
-	} catch (error) {
-		console.warn('Failed to update currency rates, using fallback:', error);
-		if (currencyCache) {
-			return currencyCache.data;
-		}
-		return [
-			{ bank: 'Нацбанк', buy: 0, sell: 0, official: true },
-			{ bank: 'Альфа-Банк', buy: 0, sell: 0 },
-			{ bank: 'БСБ-Банк', buy: 0, sell: 0 },
-			{ bank: 'БНБ-Банк', buy: 0, sell: 0 },
-			{ bank: 'Приорбанк', buy: 0, sell: 0 }
-		];
 	}
+
+	if (currencyCache) {
+		return currencyCache.data;
+	}
+
+	console.warn('Currency: no rates from NBRB or banki24, returning empty');
+	return [];
 }
 
 async function fetchNbrbUsdRate(): Promise<number> {
