@@ -37,20 +37,26 @@ export async function handleTelegramCommand(
 		case '/currency':
 			reply = await buildCurrencyMessage();
 			break;
+		case '/llm':
+			reply = await buildAIGenericReply(text, true);
+			break;
 		default:
 			reply = command.startsWith('/')
-				? 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/currency\n/healthz'
-				: await buildAIGenericReply(text);
+				? 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/currency\n/healthz\n/llm <запрос>'
+				: await buildAIGenericReply(text, false);
 			break;
 	}
 
 	return { command, reply };
 }
 
-async function buildAIGenericReply(text: string): Promise<string> {
-	const trimmed = text.trim();
+async function buildAIGenericReply(text: string, generalMode: boolean): Promise<string> {
+	const raw = generalMode ? text.replace(/^\/llm\b\s*/i, '') : text;
+	const trimmed = raw.trim();
 	if (!trimmed) {
-		return 'Напишите сообщение, и я постараюсь помочь.';
+		return generalMode
+			? 'Использование: /llm <ваш запрос>. Пример: /llm объясни что такое RSI простыми словами.'
+			: 'Напишите сообщение, и я постараюсь помочь.';
 	}
 
 	if (trimmed.length > TELEGRAM_AI_MAX_INPUT_LENGTH) {
@@ -58,12 +64,19 @@ async function buildAIGenericReply(text: string): Promise<string> {
 	}
 
 	try {
-		const prompt = [
-			'Ты ассистент в Telegram-боте crypto-dashboard.',
-			'Отвечай на русском, коротко и по делу (1-4 предложения).',
-			'Если вопрос про рынок/крипту — дай практичный и осторожный ответ без финансовых гарантий.',
-			`Пользователь: ${trimmed}`
-		].join('\n');
+		const prompt = generalMode
+			? [
+					'Ты полезный универсальный ассистент в Telegram.',
+					'Отвечай на русском, понятно и по делу.',
+					'Если данных недостаточно, честно скажи об этом и предложи, что уточнить.',
+					`Пользователь: ${trimmed}`
+				].join('\n')
+			: [
+					'Ты ассистент в Telegram-боте crypto-dashboard.',
+					'Отвечай на русском, коротко и по делу (1-4 предложения).',
+					'Если вопрос про рынок/крипту — дай практичный и осторожный ответ без финансовых гарантий.',
+					`Пользователь: ${trimmed}`
+				].join('\n');
 		const ai = await generateAIResponseWithMeta(prompt);
 		const clean = ai.content.trim();
 		return clean.length > 0 ? clean : 'Сейчас не получилось сформировать ответ. Попробуйте еще раз.';
@@ -83,6 +96,7 @@ function buildStartMessage(chatId: number): string {
 		'/btc — быстрый статус по BTC',
 		'/currency — курсы USD/BYN по банкам',
 		'/healthz — статус доступности сервиса',
+		'/llm <запрос> — универсальный режим (обычная LLM)',
 		'',
 		`Ваш chat_id: ${chatId}`,
 		`Подключено пользователей: ${knownUsers.size}`
