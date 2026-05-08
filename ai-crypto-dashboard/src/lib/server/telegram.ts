@@ -18,50 +18,16 @@ interface TelegramResponse {
 
 export type TelegramParseMode = 'HTML';
 
-/** Подпись на кнопке → текст команды (reply keyboard шлёт подпись, не /command). */
-export const TELEGRAM_MENU_ENTRIES: readonly (readonly [string, string])[] = [
-	['📊 Статус', '/status'],
-	['🚨 Сигналы', '/alerts'],
-	['₿ BTC', '/btc'],
-	['📰 Новости', '/news'],
-	['💱 Курсы', '/currency'],
-	['✅ Сервис', '/healthz'],
-	['❓ Справка', '/start'],
-	['🤖 ИИ', '/llm']
-] as const;
+/** Убрать reply-клавиатуру у клиента (после того как она больше не нужна). */
+export type TelegramReplyMarkup = {
+	remove_keyboard: true;
+	selective?: boolean;
+};
 
 const TELEGRAM_MENU_REGISTERED_KEY = '__cryptoTelegramSetMyCommandsDone__';
 
-function chunkMenuRows<T>(items: readonly T[], size: number): T[][] {
-	const rows: T[][] = [];
-	for (let i = 0; i < items.length; i += size) {
-		rows.push(items.slice(i, i + size));
-	}
-	return rows;
-}
-
-export function getTelegramMenuKeyboardMarkup(): {
-	keyboard: { text: string }[][];
-	resize_keyboard: boolean;
-	one_time_keyboard: boolean;
-	input_field_placeholder: string;
-} {
-	const keyboard = chunkMenuRows([...TELEGRAM_MENU_ENTRIES], 3).map((row) =>
-		row.map(([label]) => ({ text: label }))
-	);
-	return {
-		keyboard,
-		resize_keyboard: true,
-		one_time_keyboard: false,
-		input_field_placeholder: 'Команда или сообщение…'
-	};
-}
-
-/** Если пользователь нажал кнопку меню — подменяем на реальную команду. */
-export function resolveTelegramMenuButton(raw: string): string {
-	const t = raw.trim();
-	const hit = TELEGRAM_MENU_ENTRIES.find(([label]) => label === t);
-	return hit ? hit[1] : raw;
+export function getTelegramReplyKeyboardRemove(): TelegramReplyMarkup {
+	return { remove_keyboard: true };
 }
 
 export function ensureTelegramBotMenuConfigured(): void {
@@ -83,7 +49,7 @@ async function registerTelegramBotCommands(): Promise<void> {
 	}
 
 	const commands = [
-		{ command: 'start', description: '👋 Справка и клавиатура команд' },
+		{ command: 'start', description: '👋 Справка и список команд' },
 		{ command: 'status', description: '📊 Статус рынка (BTC, ETH, тренд)' },
 		{ command: 'alerts', description: '🚨 Топ сигналов по рынку' },
 		{ command: 'btc', description: '₿ Курс и импульс Bitcoin' },
@@ -109,7 +75,7 @@ async function registerTelegramBotCommands(): Promise<void> {
 
 export type TelegramSendMessageOptions = {
 	parseMode?: TelegramParseMode;
-	replyMarkup?: ReturnType<typeof getTelegramMenuKeyboardMarkup>;
+	replyMarkup?: TelegramReplyMarkup;
 };
 
 export async function sendTelegramMessage(

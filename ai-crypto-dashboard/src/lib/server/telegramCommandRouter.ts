@@ -5,7 +5,7 @@ import { getUsdBynRates } from '$lib/api/currency';
 import { getTopCoins } from '$lib/api/coins';
 import { generateAIResponseWithMeta } from '$lib/server/ai/provider';
 import { getServerCryptoNews } from '$lib/server/cryptoNews';
-import { getTelegramMenuKeyboardMarkup, resolveTelegramMenuButton } from '$lib/server/telegram';
+import { getTelegramReplyKeyboardRemove, type TelegramReplyMarkup } from '$lib/server/telegram';
 
 const knownUsers = new Set<number>();
 const btcPriceHistory: Array<{ price: number; timestamp: number }> = [];
@@ -66,10 +66,10 @@ export async function handleTelegramCommand(
 	command: string;
 	reply: string;
 	parseMode?: 'HTML';
-	replyMarkup?: ReturnType<typeof getTelegramMenuKeyboardMarkup>;
+	replyMarkup?: TelegramReplyMarkup;
 }> {
 	knownUsers.add(chatId);
-	const normalized = resolveTelegramMenuButton(text).trim();
+	const normalized = text.trim();
 	const firstToken = normalized.split(/\s+/)[0].toLowerCase();
 
 	if (isLlmPending(chatId)) {
@@ -101,12 +101,12 @@ export async function handleTelegramCommand(
 
 	let reply: string;
 	let parseMode: 'HTML' | undefined;
-	let replyMarkup: ReturnType<typeof getTelegramMenuKeyboardMarkup> | undefined;
+	let replyMarkup: TelegramReplyMarkup | undefined;
 	switch (command) {
 		case '/start':
 			clearLlmPending(chatId);
 			reply = buildStartMessage(chatId);
-			replyMarkup = getTelegramMenuKeyboardMarkup();
+			replyMarkup = getTelegramReplyKeyboardRemove();
 			break;
 		case '/status':
 			clearLlmPending(chatId);
@@ -147,7 +147,7 @@ export async function handleTelegramCommand(
 		default:
 			clearLlmPending(chatId);
 			reply = command.startsWith('/')
-				? 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/news\n/currency\n/healthz\n/llm <запрос>\n\nПодсказка: откройте список команд кнопкой «/» у поля ввода или нажмите «❓ Справка» на клавиатуре.'
+				? 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/news\n/currency\n/healthz\n/llm <запрос>\n\nПодсказка: кнопка Menu (или «/») у поля ввода — список команд.'
 				: await buildAIGenericReply(normalized, false);
 			break;
 	}
@@ -241,8 +241,7 @@ function buildStartMessage(chatId: number): string {
 	return [
 		'👋 Привет! Я crypto-dashboard бот.',
 		'',
-		'Ниже закреплена клавиатура с кнопками — можно не вводить команды вручную.',
-		'Список команд также доступен через кнопку «/» слева от поля ввода (меню Telegram).',
+		'Команды: кнопка Menu внизу слева или значок «/» у поля ввода — откроется список.',
 		'',
 		'Доступные команды:',
 		'/status — краткий статус рынка',
