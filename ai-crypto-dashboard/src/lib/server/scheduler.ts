@@ -120,51 +120,123 @@ function getFallbackHeadlines(): string[] {
 	];
 }
 
+const ALERT_DEDUP_STATE_KEY = '__cryptoSchedulerAlertDedup__';
+
+interface AlertDedupState {
+	fingerprint: string;
+	sentAt: number;
+}
+
+function getAlertDedupState(): AlertDedupState | null {
+	const g = globalThis as typeof globalThis & Record<string, AlertDedupState | undefined>;
+	return g[ALERT_DEDUP_STATE_KEY] ?? null;
+}
+
+function setAlertDedupState(fingerprint: string): void {
+	const g = globalThis as typeof globalThis & Record<string, AlertDedupState | undefined>;
+	g[ALERT_DEDUP_STATE_KEY] = { fingerprint, sentAt: Date.now() };
+}
+
+function getAlertDedupTtlMs(): number {
+	const raw = String(env.ALERT_DEDUP_TTL_MINUTES ?? '45').split('#')[0].trim();
+	const parsed = Number(raw);
+	const minutes = Number.isFinite(parsed) && parsed > 0 ? parsed : 45;
+	return minutes * 60 * 1000;
+}
+
+function computeAlertsFingerprint(
+	alerts: Alert[],
+	sentiment: SentimentLabel,
+	sentimentConfidence: number
+): string {
+	const conf = Math.round(sentimentConfidence * 100) / 100;
+	const parts = alerts
+		.map(
+			(a) =>
+				`${a.coinName}|${a.signal}|${Math.round(a.priceChange24h * 10) / 10}|${a.signalStrength}|${a.decision}`
+		)
+		.sort();
+	return `${sentiment}:${conf}:${parts.join(';')}`;
+}
+
+function shouldSkipDuplicateAlertBroadcast(fingerprint: string): boolean {
+	const prev = getAlertDedupState();
+	if (!prev) {
+		return false;
+	}
+	if (prev.fingerprint !== fingerprint) {
+		return false;
+	}
+	if (Date.now() - prev.sentAt > getAlertDedupTtlMs()) {
+		return false;
+	}
+	return true;
+}
+
+function escapeSchedulerHtml(text: string): string {
+	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function buildTelegramMessage(
 	alerts: Alert[],
 	debug?: { sentiment: SentimentLabel; sentimentConfidence: number; modelUsed?: string }
 ): string {
-	let message = '🚨 Smart Alerts\n━━━━━━━━━━━━━━━━━━';
+	const sentiment = debug?.sentiment ?? 'neutral';
+	const sentimentEmoji =
+		sentiment === 'bullish' ? '🟢' : sentiment === 'bearish' ? '🔴' : '🟡';
+	const sentimentRu =
+		sentiment === 'bullish'
+			? 'Бычий фон'
+			: sentiment === 'bearish'
+				? 'Медвежий фон'
+				: 'Нейтральный фон';
+
+	let html = '<b>🚨 Smart Alerts</b>\n';
+	html += `${sentimentEmoji} <i>${escapeSchedulerHtml(sentimentRu)}</i>`;
+	if (debug) {
+		html += ` · tone <code>${debug.sentimentConfidence.toFixed(2)}</code>`;
+	}
+	html += '\n<code>━━━━━━━━━━━━━━━━━━</code>';
 
 	for (const alert of alerts) {
-		const directionLabel = alert.signal === 'bullish' ? 'Бычий' : 'Медвежий';
-		const signedChange = `${alert.priceChange24h >= 0 ? '+' : ''}${alert.priceChange24h.toFixed(1)}%`;
-		const strength =
-			alert.signalStrength === 'strong'
-				? '🔥 Сильный'
-				: alert.signalStrength === 'medium'
-					? '⚠️ Средний'
-					: 'ℹ️ Слабый';
-		const confidence =
-			alert.confidence === 'high'
-				? 'Высокая'
-				: alert.confidence === 'medium'
-					? 'Средняя'
-					: 'Низкая';
-		const reason = alert.reason || formatReasonRu(alert.signal, alert.confidence);
-		const shortTermMove =
-			alert.shortTermChangePercent === null
-				? null
-				: `${alert.shortTermChangePercent >= 0 ? '+' : ''}${alert.shortTermChangePercent.toFixed(1)}% (5-15m)`;
-		const volumeLine = alert.volumeSpike ? 'Объем: зафиксирован всплеск' : 'Объем: без всплеска';
-
-		message += `\n\n${alert.icon} ${alert.coinName} · ${shortTermMove ?? signedChange} · ${directionLabel}`;
-		message += `\n24h: ${signedChange}`;
-		message += `\n${volumeLine}`;
-		message += `\n${reason}`;
-		message += `\nConfidence: ${confidence} ${strength}`;
+		const signed = `${alert.priceChange24h >= 0 ? '+' : ''}${alert.priceChange24h.toFixed(1)}%`;
+		const confRu =
+			alert.confidence === 'high' ? 'высокая увер.' : alert.confidence === 'medium' ? 'средняя' : 'низкая';
+		const strRu =
+			alert.signalStrength === 'strong' ? 'сильный' : alert.signalStrength === 'medium' ? 'средний' : 'слабый';
+		html += `\n• <b>${escapeSchedulerHtml(alert.coinName)}</b> <code>${signed}</code> · ${confRu} · ${strRu}`;
 	}
 
-	message += `\n\n📊 Контекст рынка`;
-	message += `\n${buildMarketContext(alerts)}`;
+	const detailAlerts = alerts.filter((a) => a.signalStrength === 'strong' || a.extremeMove);
+	if (detailAlerts.length > 0) {
+		const detailBody = detailAlerts
+			.map((a) => {
+				const signed = `${a.priceChange24h >= 0 ? '+' : ''}${a.priceChange24h.toFixed(1)}%`;
+				const st =
+					a.shortTermChangePercent === null
+						? '—'
+						: `${a.shortTermChangePercent >= 0 ? '+' : ''}${a.shortTermChangePercent.toFixed(1)}% (5–15m)`;
+				const lines = [
+					a.coinName,
+					`24h: ${signed} · краткоср.: ${st}`,
+					a.volumeSpike ? 'Объём: всплеск' : 'Объём: без всплеска',
+					a.reason || formatReasonRu(a.signal, a.confidence),
+					`Сигнал: ${a.signal === 'bullish' ? 'бычий' : a.signal === 'bearish' ? 'медвежий' : 'неопр.'}`
+				];
+				return lines.join('\n');
+			})
+			.join('\n───\n');
+		html += `\n\n<b>⚡ Детали (сильные / экстрим)</b>\n<pre>${escapeSchedulerHtml(detailBody)}</pre>`;
+	}
+
+	html += `\n\n<b>📊 Контекст рынка</b>\n<i>${escapeSchedulerHtml(buildMarketContext(alerts))}</i>`;
 
 	const configuredModel = env.OPENROUTER_MODEL?.trim() || 'openrouter/auto';
 	const actualModel = debug?.modelUsed || configuredModel;
-	message += `\n\n🤖 LLM анализ`;
-	message += `\nМодель: ${actualModel}`;
-	message += `\nТариф: ${formatModelTier(actualModel)}`;
+	const tier = formatModelTier(actualModel);
+	html += `\n\n<b>🤖 LLM</b>\nМодель: <code>${escapeSchedulerHtml(actualModel)}</code>\nТариф: <code>${escapeSchedulerHtml(tier)}</code>`;
 
-	return message;
+	return html;
 }
 
 function buildHeartbeatMessage(
@@ -405,17 +477,30 @@ export async function runAlertCheck(): Promise<void> {
 			invalidateMarketCache('major alert triggered');
 		}
 
-		const message = buildTelegramMessage(alerts.slice(0, 3), {
+		const toSend = alerts.slice(0, 3);
+		const fingerprint = computeAlertsFingerprint(
+			toSend,
+			sentimentLabel,
+			sentimentResult.confidence
+		);
+		if (shouldSkipDuplicateAlertBroadcast(fingerprint)) {
+			console.log('Smart alert skipped: duplicate payload within ALERT_DEDUP_TTL_MINUTES');
+			scheduleNextRun(intervalMs);
+			return;
+		}
+
+		const message = buildTelegramMessage(toSend, {
 			sentiment: sentimentLabel,
 			sentimentConfidence: sentimentResult.confidence,
 			modelUsed: sentimentResult.model
 		});
-		const sent = await sendTelegramMessage(message);
+		const sent = await sendTelegramMessage(message, undefined, { parseMode: 'HTML' });
 
 		if (sent) {
-			console.log(`Alerts sent: ${Math.min(alerts.length, 3)}`);
+			setAlertDedupState(fingerprint);
+			console.log(`Alerts sent: ${toSend.length}`);
 		} else {
-			console.log('No alerts');
+			console.log('No alerts (Telegram send failed)');
 		}
 		scheduleNextRun(intervalMs);
 	} catch (error) {
@@ -455,16 +540,32 @@ export async function runAlertCheck(): Promise<void> {
 					return;
 				}
 
-				const telegramMessage = buildTelegramMessage(alerts.slice(0, 3), {
+				const toSend = alerts.slice(0, 3);
+				const fingerprint = computeAlertsFingerprint(
+					toSend,
+					sentimentLabel,
+					sentimentResult.confidence
+				);
+				if (shouldSkipDuplicateAlertBroadcast(fingerprint)) {
+					console.log('Smart alert skipped (429 fallback): duplicate payload within TTL');
+					const fallbackVolatility = getVolatilityFromMarketData(state.lastMarketData);
+					scheduleNextRun(getPollingIntervalMs(fallbackVolatility));
+					return;
+				}
+
+				const telegramMessage = buildTelegramMessage(toSend, {
 					sentiment: sentimentLabel,
 					sentimentConfidence: sentimentResult.confidence,
 					modelUsed: sentimentResult.model
 				});
-				const sent = await sendTelegramMessage(telegramMessage);
+				const sent = await sendTelegramMessage(telegramMessage, undefined, {
+					parseMode: 'HTML'
+				});
 				if (sent) {
-					console.log(`Alerts sent: ${Math.min(alerts.length, 3)}`);
+					setAlertDedupState(fingerprint);
+					console.log(`Alerts sent: ${toSend.length}`);
 				} else {
-					console.log('No alerts');
+					console.log('No alerts (Telegram send failed)');
 				}
 				const fallbackVolatility = getVolatilityFromMarketData(state.lastMarketData);
 				scheduleNextRun(getPollingIntervalMs(fallbackVolatility));

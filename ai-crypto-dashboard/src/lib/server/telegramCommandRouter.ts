@@ -19,6 +19,7 @@ const llmPendingUntil = new Map<number, number>();
 
 const SLASH_COMMANDS = new Set([
 	'/start',
+	'/help',
 	'/status',
 	'/alerts',
 	'/btc',
@@ -48,6 +49,15 @@ function clearLlmPending(chatId: number): void {
 	llmPendingUntil.delete(chatId);
 }
 
+function formatTelegramSleepHint(): string {
+	const healthUrl = `${resolveServiceBaseUrl()}/healthz`;
+	return [
+		'💤 Нет ответа долго? Сервер мог уснуть (типично для бесплатного хостинга).',
+		`Разбудите: отправьте /healthz или откройте в браузере: ${healthUrl}`,
+		'Когда придёт ответ на /healthz — повторите нужную команду.'
+	].join('\n');
+}
+
 function buildLlmTwoStepHint(): string {
 	return [
 		'В меню команд Telegram выбранная команда сразу уходит в чат — строку в поле ввода «дописать» нельзя, это устроено в клиенте.',
@@ -56,7 +66,9 @@ function buildLlmTwoStepHint(): string {
 		'• отправьте следующим сообщением ваш вопрос одним текстом (я жду ответ до ~5 мин), или',
 		'• одной строкой: /llm ваш вопрос',
 		'',
-		'Команда /status и остальные отменяют это ожидание.'
+		'Команда /status и остальные отменяют это ожидание.',
+		'',
+		formatTelegramSleepHint()
 	].join('\n');
 }
 
@@ -109,17 +121,25 @@ export async function handleTelegramCommand(
 			reply = buildStartMessage(chatId);
 			replyMarkup = getTelegramReplyKeyboardRemove();
 			break;
+		case '/help':
+			clearLlmPending(chatId);
+			reply = buildHelpMessage();
+			parseMode = 'HTML';
+			break;
 		case '/status':
 			clearLlmPending(chatId);
 			reply = await buildStatusMessage();
+			parseMode = 'HTML';
 			break;
 		case '/alerts':
 			clearLlmPending(chatId);
 			reply = await buildAlertsMessage();
+			parseMode = 'HTML';
 			break;
 		case '/btc':
 			clearLlmPending(chatId);
 			reply = await buildBtcMessage();
+			parseMode = 'HTML';
 			break;
 		case '/healthz':
 			clearLlmPending(chatId);
@@ -151,7 +171,7 @@ export async function handleTelegramCommand(
 		default:
 			clearLlmPending(chatId);
 			reply = command.startsWith('/')
-				? 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/news\n/currency\n/healthz\n/llm <запрос>\n\nПодсказка: кнопка Menu (или «/») у поля ввода — список команд.'
+				? `Неизвестная команда.\n\nДоступно:\n/start\n/help\n/status\n/alerts\n/btc\n/news\n/currency\n/healthz\n/llm <запрос>\n\nПодсказка: Menu или «/» у поля ввода.\n\n${formatTelegramSleepHint()}`
 				: await buildAIGenericReply(normalized, false);
 			break;
 	}
@@ -164,8 +184,8 @@ async function buildAIGenericReply(text: string, generalMode: boolean): Promise<
 	const trimmed = raw.trim();
 	if (!trimmed) {
 		return generalMode
-			? 'Использование: /llm <ваш запрос>. Пример: /llm объясни что такое RSI простыми словами.'
-			: 'Напишите сообщение, и я постараюсь помочь.';
+			? `Использование: /llm <ваш запрос>. Пример: /llm объясни что такое RSI простыми словами.\n\n${formatTelegramSleepHint()}`
+			: `Напишите сообщение, и я постараюсь помочь.\n\n${formatTelegramSleepHint()}`;
 	}
 
 	if (trimmed.length > TELEGRAM_AI_MAX_INPUT_LENGTH) {
@@ -248,16 +268,37 @@ function buildStartMessage(chatId: number): string {
 		'Команды: кнопка Menu внизу слева или значок «/» у поля ввода — откроется список.',
 		'',
 		'Доступные команды:',
+		'/help — все команды одним сообщением',
 		'/status — краткий статус рынка',
 		'/alerts — топ-3 текущих сигнала',
 		'/btc — быстрый статус по BTC',
 		'/currency — курсы USD/BYN по банкам',
 		'/news — топ-5 свежих новостей крипторынка',
-		'/healthz — статус доступности сервиса',
+		'/healthz — доступность сервиса и пробуждение инстанса',
 		'/llm <запрос> — универсальный режим (обычная LLM)',
+		'',
+		formatTelegramSleepHint(),
 		'',
 		`Ваш chat_id: ${chatId}`,
 		`Подключено пользователей: ${knownUsers.size}`
+	].join('\n');
+}
+
+function buildHelpMessage(): string {
+	const healthUrl = `${resolveServiceBaseUrl()}/healthz`;
+	return [
+		'<b>📖 Команды</b>',
+		'<code>/start</code> — приветствие',
+		'<code>/help</code> — этот список',
+		'<code>/status</code> — рынок (BTC, ETH, тренд)',
+		'<code>/alerts</code> — топ сигналов',
+		'<code>/btc</code> — Bitcoin',
+		'<code>/news</code> — новости',
+		'<code>/currency</code> — USD/BYN',
+		'<code>/healthz</code> — сервис + пробуждение',
+		'<code>/llm</code> — универсальный ИИ',
+		'',
+		`<i>💤 Нет ответа? Хост мог уснуть → <code>/healthz</code> или ${escapeTelegramHtml(healthUrl)}</i>`
 	].join('\n');
 }
 
@@ -269,6 +310,7 @@ async function buildStatusMessage(): Promise<string> {
 		const avgChange = getAverageChange(coins);
 		const avgAbsChange = getAverageAbsChange(coins);
 		const trend = avgChange > 1 ? 'Бычий' : avgChange < -1 ? 'Медвежий' : 'Нейтральный';
+		const trendEmoji = avgChange > 1 ? '🟢' : avgChange < -1 ? '🔴' : '🟡';
 		const volatility = avgAbsChange >= 5 ? 'Высокая' : avgAbsChange >= 2 ? 'Средняя' : 'Низкая';
 		const hint =
 			volatility === 'Высокая'
@@ -277,19 +319,22 @@ async function buildStatusMessage(): Promise<string> {
 					? 'Движение умеренное, ждите подтверждения по объему.'
 					: 'Рынок спокойный, сильный импульс пока не сформирован.';
 
+		const btcPct = formatSignedPercent(btc?.price_change_percentage_24h ?? 0);
+		const ethPct = formatSignedPercent(eth?.price_change_percentage_24h ?? 0);
+
 		return [
-			'📊 Статус рынка',
-			`BTC: ${formatSignedPercent(btc?.price_change_percentage_24h ?? 0)}`,
-			`ETH: ${formatSignedPercent(eth?.price_change_percentage_24h ?? 0)}`,
+			'<b>📊 Статус рынка</b>',
+			`${trendEmoji} <i>${escapeTelegramHtml(trend)} · волатильность: ${escapeTelegramHtml(volatility)}</i>`,
+			'<code>━━━━━━━━━━━━━━━━━━</code>',
 			'',
-			`Тренд: ${trend}`,
-			`Волатильность: ${volatility}`,
+			`BTC (24h): <code>${escapeTelegramHtml(btcPct)}</code>`,
+			`ETH (24h): <code>${escapeTelegramHtml(ethPct)}</code>`,
 			'',
-			`Подсказка: ${hint}`
+			`<b>Подсказка</b>\n${escapeTelegramHtml(hint)}`
 		].join('\n');
 	} catch (error) {
 		console.error('Failed to build /status response:', error);
-		return 'Не удалось получить статус рынка. Попробуйте еще раз позже.';
+		return escapeTelegramHtml('Не удалось получить статус рынка. Попробуйте еще раз позже.');
 	}
 }
 
@@ -302,26 +347,35 @@ async function buildAlertsMessage(): Promise<string> {
 
 		if (alerts.length === 0) {
 			return [
-				'🚨 Топ сигналы',
+				'<b>🚨 Топ сигналы</b>',
+				'<i>Сильных сигналов пока нет.</i>',
 				'',
-				'Сильных сигналов пока нет.',
-				'Подсказка: рынок тихий, ждите пробой или рост объема.'
+				`<i>${escapeTelegramHtml('Рынок тихий — ждите пробой или рост объёма.')}</i>`
 			].join('\n');
 		}
 
 		const top3 = alerts.slice(0, 3);
-		const lines: string[] = ['🚨 Топ сигналы', ''];
+		const toneEmoji = avgChange >= 0 ? '🟢' : '🔴';
+		const parts: string[] = [
+			'<b>🚨 Топ сигналы</b>',
+			`${toneEmoji} <i>срез по текущему уклону рынка</i>`,
+			'<code>━━━━━━━━━━━━━━━━━━</code>'
+		];
+
 		for (const alert of top3) {
-			const marker = getPriorityIcon(alert);
-			lines.push(`${marker} ${alert.coinName} — ${formatSignedPercent(alert.priceChange24h)}`);
-			lines.push(`${alert.actionHint} | Confidence: ${alert.confidencePercent}%`);
-			lines.push('');
+			const pct = formatSignedPercent(alert.priceChange24h);
+			parts.push(
+				'',
+				`• <b>${escapeTelegramHtml(alert.coinName)}</b> <code>${escapeTelegramHtml(pct)}</code>`,
+				`  <i>${escapeTelegramHtml(alert.actionHint)}</i> · conf <code>${alert.confidencePercent}%</code>`
+			);
 		}
-		lines.push('Подсказка: следите за продолжением импульса и подтверждением по объему.');
-		return lines.join('\n');
+
+		parts.push('', `<i>${escapeTelegramHtml('Следите за импульсом и объёмом.')}</i>`);
+		return parts.join('\n');
 	} catch (error) {
 		console.error('Failed to build /alerts response:', error);
-		return 'Не удалось получить алерты. Попробуйте позже.';
+		return escapeTelegramHtml('Не удалось получить алерты. Попробуйте позже.');
 	}
 }
 
@@ -330,7 +384,7 @@ async function buildBtcMessage(): Promise<string> {
 		const coins = await getTopCoins();
 		const btc = coins.find((coin) => coin.id === 'bitcoin');
 		if (!btc) {
-			return 'BTC не найден в текущих рыночных данных.';
+			return escapeTelegramHtml('BTC не найден в текущих рыночных данных.');
 		}
 
 		const avgChange = getAverageChange(coins);
@@ -348,6 +402,8 @@ async function buildBtcMessage(): Promise<string> {
 				: btc.price_change_percentage_24h < -4
 					? 'Медвежий'
 					: 'Нейтральный';
+		const headerEmoji =
+			btc.price_change_percentage_24h > 4 ? '🟢' : btc.price_change_percentage_24h < -4 ? '🔴' : '🟡';
 		const momentumLabel =
 			momentum.momentumStrength === 'strong'
 				? 'Сильный'
@@ -357,24 +413,30 @@ async function buildBtcMessage(): Promise<string> {
 		const shortTerm = getBtcShortTermChange(btc.current_price);
 		const hint =
 			momentumLabel === 'Сильный'
-				? 'Подсказка: возможен пробой, следите за удержанием импульса.'
+				? 'Возможен пробой — следите за удержанием импульса.'
 				: momentumLabel === 'Средний'
-					? 'Подсказка: импульс есть, дождитесь подтверждения.'
-					: 'Подсказка: сильного импульса нет, не спешите с входом.';
+					? 'Импульс есть — дождитесь подтверждения.'
+					: 'Сильного импульса нет — не спешите с входом.';
+
+		const priceStr = btc.current_price.toLocaleString('en-US', { maximumFractionDigits: 2 });
+		const d24 = formatSignedPercent(btc.price_change_percentage_24h);
+		const d5 = formatSignedPercent(shortTerm.change5m);
+		const d15 = formatSignedPercent(shortTerm.change15m);
 
 		return [
-			'₿ BTC',
-			`Цена: $${btc.current_price.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-			`24ч: ${formatSignedPercent(btc.price_change_percentage_24h)}`,
-			`5м: ${formatSignedPercent(shortTerm.change5m)} / 15м: ${formatSignedPercent(shortTerm.change15m)}`,
+			'<b>₿ Bitcoin</b>',
+			`${headerEmoji} <i>${escapeTelegramHtml(signal)} · импульс: ${escapeTelegramHtml(momentumLabel)}</i>`,
+			'<code>━━━━━━━━━━━━━━━━━━</code>',
 			'',
-			`Сигнал: ${signal}`,
-			`Импульс: ${momentumLabel}`,
-			hint
+			`Цена: <code>$${escapeTelegramHtml(priceStr)}</code>`,
+			`24ч: <code>${escapeTelegramHtml(d24)}</code>`,
+			`5м / 15м: <code>${escapeTelegramHtml(d5)}</code> · <code>${escapeTelegramHtml(d15)}</code>`,
+			'',
+			`<b>Подсказка</b>\n${escapeTelegramHtml(hint)}`
 		].join('\n');
 	} catch (error) {
 		console.error('Failed to build /btc response:', error);
-		return 'Не удалось получить BTC данные. Попробуйте позже.';
+		return escapeTelegramHtml('Не удалось получить BTC данные. Попробуйте позже.');
 	}
 }
 
@@ -490,19 +552,6 @@ async function buildCurrencyMessage(): Promise<string> {
 		console.error('Failed to build /currency response:', error);
 		return escapeTelegramHtml('Не удалось получить курсы валют. Попробуйте чуть позже.');
 	}
-}
-
-function getPriorityIcon(alert: {
-	extremeMove: boolean;
-	decision: 'early_breakout' | 'breakout' | 'pullback' | 'continuation' | 'uncertain';
-	signalStrength: 'strong' | 'medium' | 'weak';
-}): string {
-	if (alert.extremeMove) return '🚀';
-	if (alert.decision === 'early_breakout') return '⚡';
-	if (alert.decision === 'breakout') return '🔥';
-	if (alert.signalStrength === 'strong') return '🔥';
-	if (alert.signalStrength === 'medium') return '⚠️';
-	return 'ℹ️';
 }
 
 function getBtcShortTermChange(currentPrice: number): { change5m: number; change15m: number } {

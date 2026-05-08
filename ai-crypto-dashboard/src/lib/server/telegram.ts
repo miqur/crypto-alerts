@@ -50,6 +50,7 @@ async function registerTelegramBotCommands(): Promise<void> {
 
 	const commands = [
 		{ command: 'start', description: '👋 Справка и список команд' },
+		{ command: 'help', description: '📖 Все команды одним сообщением' },
 		{ command: 'status', description: '📊 Статус рынка (BTC, ETH, тренд)' },
 		{ command: 'alerts', description: '🚨 Топ сигналов по рынку' },
 		{ command: 'btc', description: '₿ Курс и импульс Bitcoin' },

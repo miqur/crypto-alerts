@@ -70,7 +70,7 @@
 
 {#if newsSentiment || sentimentLoading}
 	<div
-		class="mb-8 rounded-2xl border border-fuchsia-400/20 bg-slate-900/70 p-6 shadow-[0_0_40px_rgba(217,70,239,0.18)] backdrop-blur transition-transform duration-300 hover:-translate-y-0.5"
+		class="rounded-2xl border border-fuchsia-400/20 bg-slate-900/70 p-6 shadow-[0_0_40px_rgba(217,70,239,0.18)] backdrop-blur transition-transform duration-300 hover:-translate-y-0.5"
 	>
 		<h2 class="mb-4 text-lg font-semibold text-fuchsia-100">Тональность новостей</h2>
 
@@ -86,13 +86,13 @@
 				>
 					{sentimentLabel.charAt(0).toUpperCase() + sentimentLabel.slice(1)}
 				</span>
-				<span class="text-sm font-medium text-slate-300">{sentimentTitle(sentimentLabel)}</span>
+				<span class="text-sm font-medium text-slate-200/90">{sentimentTitle(sentimentLabel)}</span>
 			</div>
 			<div class="rounded-xl border border-slate-600/70 bg-linear-to-br from-slate-800 to-slate-900 p-4">
 				<p class="mb-3 text-sm font-medium text-slate-100">{sentimentSummary(newsSentiment)}</p>
 				<div class="space-y-2">
 					{#each sentimentHighlights(newsSentiment) as point (point)}
-						<div class="flex items-start gap-2 text-sm leading-relaxed text-slate-300">
+						<div class="flex items-start gap-2 text-sm leading-relaxed text-slate-200/85">
 							<span class="mt-0.5 text-fuchsia-300">•</span>
 							<span>{point}</span>
 						</div>

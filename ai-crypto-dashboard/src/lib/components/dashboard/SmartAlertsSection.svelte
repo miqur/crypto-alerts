@@ -56,12 +56,15 @@
 
 {#if alerts.length > 0 || alertsLoading}
 	<div
-		class="mb-8 rounded-2xl border border-indigo-400/20 bg-slate-900/70 p-6 shadow-[0_0_40px_rgba(99,102,241,0.18)] backdrop-blur transition-transform duration-300 hover:-translate-y-0.5"
+		class="rounded-2xl border border-indigo-400/20 bg-slate-900/70 p-6 shadow-[0_0_40px_rgba(99,102,241,0.18)] backdrop-blur transition-transform duration-300 hover:-translate-y-0.5"
 	>
 		<h2 class="mb-4 text-lg font-semibold text-indigo-100">Смарт-сигналы</h2>
 
 		{#if alertsLoading}
-			<StatusDisplay title="Генерируем сигналы" subtitle="Комбинируем правила и AI-анализ..." />
+			<div class="space-y-3">
+				<div class="h-24 animate-pulse rounded-xl border border-indigo-400/15 bg-slate-800/60"></div>
+				<div class="h-24 animate-pulse rounded-xl border border-indigo-400/15 bg-slate-800/60"></div>
+			</div>
 		{:else}
 			<div class="space-y-4">
 				{#each alerts as alert (alert.coinName + alert.message)}

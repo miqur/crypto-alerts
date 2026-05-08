@@ -41,7 +41,7 @@
 			aiInsight = initialData.aiInsight;
 		} catch (err) {
 			console.error(err);
-			error = 'Не удалось загрузить данные';
+			error = 'Не удалось загрузить данные рынка. Проверьте сеть и обновите страницу.';
 		} finally {
 			loading = false;
 		}
@@ -63,7 +63,7 @@
 			alerts = pipeline.alerts;
 		} catch (err) {
 			console.error(err);
-			newsError = 'Failed to load news';
+			newsError = 'Не удалось загрузить новости и сигналы. Нажмите «Обновить» или попробуйте позже.';
 		} finally {
 			newsLoading = false;
 			sentimentLoading = false;
@@ -170,7 +170,7 @@
 					Crypto Intelligence Terminal
 				</p>
 				<h1 class="text-3xl font-bold text-white sm:text-4xl">Pulse Dashboard</h1>
-				<p class="mt-2 text-sm text-slate-300">
+				<p class="mt-2 text-sm text-slate-200/90">
 					Сигналы, тональность и рыночный импульс в реальном времени
 				</p>
 			</div>
@@ -182,31 +182,39 @@
 		</div>
 
 		{#if loading}
-			<StatusDisplay title="Загружаем дашборд" subtitle="Собираем цены, новости и сигналы..." />
+			<div class="flex flex-col gap-8">
+				<StatusDisplay title="Загружаем дашборд" subtitle="Собираем цены и рыночные данные..." />
+				<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+					<div class="h-40 animate-pulse rounded-2xl border border-slate-600/40 bg-slate-800/50"></div>
+					<div class="h-40 animate-pulse rounded-2xl border border-slate-600/40 bg-slate-800/50"></div>
+				</div>
+			</div>
 		{:else if error}
 			<StatusDisplay type="error" title="Ошибка загрузки" subtitle={error} />
 		{:else}
-			<div class="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
-				<SmartAlertsSection {alerts} {alertsLoading} />
-				<MarketInsightCard {aiInsight} />
-			</div>
-
-			<div class="mb-8 grid grid-cols-1 items-stretch gap-6 xl:grid-cols-3">
-				<div class="xl:col-span-2">
-					<MarketMomentumChart {coins} />
+			<div class="flex flex-col gap-10">
+				<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+					<SmartAlertsSection {alerts} {alertsLoading} />
+					<MarketInsightCard {aiInsight} />
 				</div>
-				<div>
-					<CoinListSection {coins} compact={true} maxHeightClass="max-h-[338px]" />
-				</div>
-			</div>
 
-			<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
-				<NewsSentimentSection {newsSentiment} {sentimentLoading} {sentimentLabel} />
-				<LatestNewsSection {news} {newsLoading} {newsError} onRefresh={refreshNews} />
+				<div class="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-3">
+					<div class="xl:col-span-2">
+						<MarketMomentumChart {coins} />
+					</div>
+					<div>
+						<CoinListSection {coins} compact={true} maxHeightClass="max-h-[338px]" />
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+					<NewsSentimentSection {newsSentiment} {sentimentLoading} {sentimentLabel} />
+					<LatestNewsSection {news} {newsLoading} {newsError} onRefresh={refreshNews} />
+				</div>
 			</div>
 		{/if}
 
-		<footer class="mt-auto border-t border-slate-700/50 pt-4 text-center text-xs text-slate-400">
+		<footer class="mt-10 border-t border-slate-700/50 pt-6 text-center text-xs text-slate-300/90">
 			© {new Date().getFullYear()} Crypto Dashboard. All rights reserved.
 		</footer>
 	</div>
