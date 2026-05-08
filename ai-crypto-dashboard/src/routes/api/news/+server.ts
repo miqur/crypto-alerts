@@ -1,99 +1,12 @@
 import type { RequestHandler } from '@sveltejs/kit';
+import { getServerCryptoNews } from '$lib/server/cryptoNews';
 
-export interface NewsItem {
-	title: string;
-	url: string;
-	source: string;
-	published_at: string;
-}
-
-// Cache for news data (short-term cache)
-let newsCache: { data: NewsItem[]; timestamp: number } | null = null;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+export type { NewsItem } from '$lib/server/cryptoNews';
 
 export const GET: RequestHandler = async () => {
 	try {
-		const now = Date.now();
-
-		// Return cached data if available and fresh
-		if (newsCache && now - newsCache.timestamp < CACHE_DURATION) {
-			return new Response(JSON.stringify(newsCache.data), {
-				headers: { 'Content-Type': 'application/json' }
-			});
-		}
-
-		// Try to fetch from CryptoPanic API
-		try {
-			const response = await fetch(
-				'https://cryptopanic.com/api/v1/posts/?auth_token=free&public=true&limit=10'
-			);
-
-			if (response.ok) {
-				const data = await response.json();
-
-				interface CryptoPanicItem {
-					title: string;
-					url: string;
-					source?: { title: string };
-					published_at: string;
-				}
-
-				const news: NewsItem[] = data.results.map((item: CryptoPanicItem) => ({
-					title: item.title,
-					url: item.url,
-					source: item.source?.title || 'Unknown',
-					published_at: item.published_at
-				}));
-
-				// Update cache
-				newsCache = { data: news, timestamp: now };
-
-				return new Response(JSON.stringify(news), {
-					headers: { 'Content-Type': 'application/json' }
-				});
-			}
-		} catch {
-			console.log('CryptoPanic API failed, using mock data');
-		}
-
-		// Return mock data as fallback
-		const mockNews: NewsItem[] = [
-			{
-				title: 'Bitcoin Surges Past $80,000 as Institutional Demand Grows',
-				url: 'https://www.coindesk.com/',
-				source: 'CryptoNews',
-				published_at: new Date().toISOString()
-			},
-			{
-				title: 'Ethereum Layer 2 Solutions Gain Traction with Lower Fees',
-				url: 'https://cointelegraph.com/tags/ethereum',
-				source: 'BlockchainDaily',
-				published_at: new Date(Date.now() - 3600000).toISOString()
-			},
-			{
-				title: 'TON Ecosystem Expands with New DeFi Protocols',
-				url: 'https://ton.org/',
-				source: 'TON News',
-				published_at: new Date(Date.now() - 7200000).toISOString()
-			},
-			{
-				title: 'Regulatory Clarity Boosts Crypto Market Sentiment',
-				url: 'https://www.theblock.co/regulation',
-				source: 'CryptoReg',
-				published_at: new Date(Date.now() - 10800000).toISOString()
-			},
-			{
-				title: 'Stablecoins See Record Adoption in Cross-Border Payments',
-				url: 'https://www.coindesk.com/tag/stablecoins/',
-				source: 'FinTech Today',
-				published_at: new Date(Date.now() - 14400000).toISOString()
-			}
-		];
-
-		// Update cache with mock data
-		newsCache = { data: mockNews, timestamp: now };
-
-		return new Response(JSON.stringify(mockNews), {
+		const news = await getServerCryptoNews(10);
+		return new Response(JSON.stringify(news), {
 			headers: { 'Content-Type': 'application/json' }
 		});
 	} catch (error) {

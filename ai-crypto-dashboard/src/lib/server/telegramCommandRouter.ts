@@ -4,6 +4,8 @@ import { computeMomentumSignals } from '$lib/alerts/momentum';
 import { getUsdBynRates } from '$lib/api/currency';
 import { getTopCoins } from '$lib/api/coins';
 import { generateAIResponseWithMeta } from '$lib/server/ai/provider';
+import { getServerCryptoNews } from '$lib/server/cryptoNews';
+import { getTelegramMenuKeyboardMarkup, resolveTelegramMenuButton } from '$lib/server/telegram';
 
 const knownUsers = new Set<number>();
 const btcPriceHistory: Array<{ price: number; timestamp: number }> = [];
@@ -13,14 +15,23 @@ const TELEGRAM_AI_MAX_INPUT_LENGTH = 500;
 export async function handleTelegramCommand(
 	text: string,
 	chatId: number
-): Promise<{ command: string; reply: string }> {
+): Promise<{
+	command: string;
+	reply: string;
+	parseMode?: 'HTML';
+	replyMarkup?: ReturnType<typeof getTelegramMenuKeyboardMarkup>;
+}> {
 	knownUsers.add(chatId);
-	const command = text.split(/\s+/)[0].toLowerCase();
+	const normalized = resolveTelegramMenuButton(text).trim();
+	const command = normalized.split(/\s+/)[0].toLowerCase();
 
 	let reply: string;
+	let parseMode: 'HTML' | undefined;
+	let replyMarkup: ReturnType<typeof getTelegramMenuKeyboardMarkup> | undefined;
 	switch (command) {
 		case '/start':
 			reply = buildStartMessage(chatId);
+			replyMarkup = getTelegramMenuKeyboardMarkup();
 			break;
 		case '/status':
 			reply = await buildStatusMessage();
@@ -36,18 +47,22 @@ export async function handleTelegramCommand(
 			break;
 		case '/currency':
 			reply = await buildCurrencyMessage();
+			parseMode = 'HTML';
+			break;
+		case '/news':
+			reply = await buildCryptoNewsMessage();
 			break;
 		case '/llm':
-			reply = await buildAIGenericReply(text, true);
+			reply = await buildAIGenericReply(normalized, true);
 			break;
 		default:
 			reply = command.startsWith('/')
-				? 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/currency\n/healthz\n/llm <запрос>'
-				: await buildAIGenericReply(text, false);
+				? 'Неизвестная команда.\n\nДоступно:\n/start\n/status\n/alerts\n/btc\n/news\n/currency\n/healthz\n/llm <запрос>\n\nПодсказка: откройте список команд кнопкой «/» у поля ввода или нажмите «❓ Справка» на клавиатуре.'
+				: await buildAIGenericReply(normalized, false);
 			break;
 	}
 
-	return { command, reply };
+	return { command, reply, parseMode, replyMarkup };
 }
 
 async function buildAIGenericReply(text: string, generalMode: boolean): Promise<string> {
@@ -86,15 +101,65 @@ async function buildAIGenericReply(text: string, generalMode: boolean): Promise<
 	}
 }
 
+async function buildCryptoNewsMessage(): Promise<string> {
+	try {
+		const items = await getServerCryptoNews(5);
+		if (items.length === 0) {
+			return 'Не удалось получить новости. Попробуйте позже.';
+		}
+
+		const lines: string[] = [
+			'📰 Топ-5 новостей крипторынка',
+			'Лента: CryptoPanic (публичный API)',
+			`Сводка сформирована: ${formatMinskTime()}`,
+			''
+		];
+
+		for (let i = 0; i < items.length; i += 1) {
+			const item = items[i];
+			lines.push(`${i + 1}. ${item.title}`);
+			lines.push(`   ${item.source} · ${formatNewsPublishedAt(item.published_at)}`);
+			lines.push(`   ${item.url}`);
+			lines.push('');
+		}
+
+		lines.push('Не финансовый совет — сверяйтесь с первоисточниками.');
+		return lines.join('\n');
+	} catch (error) {
+		console.error('Failed to build /news response:', error);
+		return 'Не удалось загрузить новости. Попробуйте позже.';
+	}
+}
+
+function formatNewsPublishedAt(iso: string): string {
+	try {
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) {
+			return iso;
+		}
+		return d.toLocaleString('ru-RU', {
+			timeZone: 'Europe/Minsk',
+			dateStyle: 'short',
+			timeStyle: 'short'
+		});
+	} catch {
+		return iso;
+	}
+}
+
 function buildStartMessage(chatId: number): string {
 	return [
 		'👋 Привет! Я crypto-dashboard бот.',
+		'',
+		'Ниже закреплена клавиатура с кнопками — можно не вводить команды вручную.',
+		'Список команд также доступен через кнопку «/» слева от поля ввода (меню Telegram).',
 		'',
 		'Доступные команды:',
 		'/status — краткий статус рынка',
 		'/alerts — топ-3 текущих сигнала',
 		'/btc — быстрый статус по BTC',
 		'/currency — курсы USD/BYN по банкам',
+		'/news — топ-5 свежих новостей крипторынка',
 		'/healthz — статус доступности сервиса',
 		'/llm <запрос> — универсальный режим (обычная LLM)',
 		'',
@@ -280,29 +345,57 @@ function formatMinskTime(): string {
 	});
 }
 
+function escapeTelegramHtml(text: string): string {
+	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 async function buildCurrencyMessage(): Promise<string> {
 	try {
 		const rates = await getUsdBynRates();
 		if (rates.length === 0) {
-			return 'Не удалось получить актуальные курсы USD/BYN.';
+			return escapeTelegramHtml('Не удалось получить актуальные курсы USD/BYN.');
 		}
 
-		const lines = ['💱 USD/BYN — курсы банков', ''];
-		for (const rate of rates) {
-			if (rate.official) {
-				lines.push(`🏛 ${rate.bank}: ${rate.buy.toFixed(4)} (официальный)`);
-			} else {
-				lines.push(
-					`🏦 ${rate.bank}: покупка ${rate.buy.toFixed(4)} / продажа ${rate.sell.toFixed(4)}`
-				);
+		const official = rates.find((r) => r.official);
+		const commercial = rates.filter((r) => !r.official);
+		const checkedAt = formatMinskTime();
+
+		const blocks: string[] = [
+			'<b>💱 USD → BYN</b>',
+			'<i>Курсы банков РБ · НБРБ + коммерческие</i>',
+			''
+		];
+
+		if (official) {
+			const rateStr =
+				official.buy > 0 ? official.buy.toFixed(4) : '—';
+			blocks.push('<b>🏛 Официальный курс</b>');
+			blocks.push(`${escapeTelegramHtml(official.bank)} · <code>${rateStr}</code> <i>BYN за 1 USD</i>`);
+			blocks.push('');
+		}
+
+		if (commercial.length > 0) {
+			const nameW = Math.max(...commercial.map((r) => r.bank.length), 6);
+			const numW = 7;
+			const header = `${'Банк'.padEnd(nameW)}  ${'купить'.padStart(numW)}  ${'продажа'.padStart(numW)}`;
+			const rule = '─'.repeat(nameW + 2 + numW + 2 + numW);
+			const preLines = [header, rule];
+			for (const r of commercial) {
+				const buy = r.buy > 0 ? r.buy.toFixed(4) : '—';
+				const sell = r.sell > 0 ? r.sell.toFixed(4) : '—';
+				const name = escapeTelegramHtml(r.bank).padEnd(nameW);
+				preLines.push(`${name}  ${buy.padStart(numW)}  ${sell.padStart(numW)}`);
 			}
+			blocks.push('<b>🏦 Коммерческие курсы</b>');
+			blocks.push(`<pre>${preLines.join('\n')}</pre>`);
+			blocks.push('');
 		}
 
-		lines.push('', `Проверка: ${formatMinskTime()}`);
-		return lines.join('\n');
+		blocks.push(`<i>🕐 ${escapeTelegramHtml(checkedAt)}</i>`);
+		return blocks.join('\n');
 	} catch (error) {
 		console.error('Failed to build /currency response:', error);
-		return 'Не удалось получить курсы валют. Попробуйте чуть позже.';
+		return escapeTelegramHtml('Не удалось получить курсы валют. Попробуйте чуть позже.');
 	}
 }
 

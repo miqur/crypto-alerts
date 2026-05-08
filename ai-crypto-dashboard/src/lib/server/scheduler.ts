@@ -8,6 +8,7 @@ import {
 	invalidateMarketCache,
 	runQuickBtcCheck
 } from '$lib/server/marketCache';
+import { getServerCryptoNews } from '$lib/server/cryptoNews';
 import { sendTelegramMessage } from '$lib/server/telegram';
 
 interface MarketCoin {
@@ -97,25 +98,12 @@ async function fetchMarketData(): Promise<MarketCoin[]> {
 }
 
 async function fetchNewsHeadlines(): Promise<string[]> {
-	// Server-side scheduler cannot use relative '/api/news' via global fetch.
-	// Fetch upstream directly with local fallback headlines.
 	try {
-		const response = await fetch(
-			'https://cryptopanic.com/api/v1/posts/?auth_token=free&public=true&limit=10'
-		);
-
-		if (response.ok) {
-			const data = (await response.json()) as { results?: Array<{ title?: string }> };
-			const headlines = (data.results ?? [])
-				.map((item) => item.title?.trim() ?? '')
-				.filter((title) => title.length > 0);
-
-			if (headlines.length > 0) {
-				return headlines;
-			}
-		}
-
-		return getFallbackHeadlines();
+		const items = await getServerCryptoNews(10);
+		const headlines = items
+			.map((item) => item.title?.trim() ?? '')
+			.filter((title) => title.length > 0);
+		return headlines.length > 0 ? headlines : getFallbackHeadlines();
 	} catch (error) {
 		console.warn('Failed to fetch news for scheduler:', error);
 		return getFallbackHeadlines();

@@ -83,9 +83,9 @@ async function pollLoop(): Promise<void> {
 				continue;
 			}
 
-			const { command, reply } = await handleTelegramCommand(text, chatId);
+			const { command, reply, parseMode, replyMarkup } = await handleTelegramCommand(text, chatId);
 			console.log(`Telegram command incoming: ${command} from chat=${chatId}`);
-			const sent = await sendTelegramMessage(reply, chatId);
+			const sent = await sendTelegramMessage(reply, chatId, { parseMode, replyMarkup });
 			console.log(`Telegram response sent: command=${command}, chat=${chatId}, ok=${sent}`);
 		}
 
