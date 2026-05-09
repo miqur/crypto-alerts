@@ -114,12 +114,12 @@ export async function handleTelegramCommand(
 
 	let reply: string;
 	let parseMode: 'HTML' | undefined;
-	let replyMarkup: TelegramReplyMarkup | undefined;
+	// Always ask Telegram client to hide legacy reply keyboards.
+	let replyMarkup: TelegramReplyMarkup | undefined = getTelegramReplyKeyboardRemove();
 	switch (command) {
 		case '/start':
 			clearLlmPending(chatId);
 			reply = buildStartMessage(chatId);
-			replyMarkup = getTelegramReplyKeyboardRemove();
 			break;
 		case '/help':
 			clearLlmPending(chatId);
